@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
 import 'package:flutter_hbb/common/widgets/login.dart';
 import 'package:flutter_hbb/common/widgets/peers_view.dart';
-import 'package:flutter_hbb/models/state_model.dart';
 import 'package:get/get.dart';
 
 import '../../common.dart';
@@ -46,15 +45,15 @@ class _MyGroupState extends State<MyGroup> {
               retry: null,
               close: () => gFFI.groupModel.groupLoadError.value = ''),
           Expanded(
-              child: Obx(() => stateGlobal.isPortrait.isTrue
-                  ? _buildPortrait()
-                  : _buildLandscape())),
+              child: (isDesktop || isWebDesktop)
+                  ? _buildDesktop()
+                  : _buildMobile())
         ],
       );
     });
   }
 
-  Widget _buildLandscape() {
+  Widget _buildDesktop() {
     return Row(
       children: [
         Container(
@@ -83,14 +82,14 @@ class _MyGroupState extends State<MyGroup> {
           child: Align(
               alignment: Alignment.topLeft,
               child: MyGroupPeerView(
-                menuPadding: widget.menuPadding,
-              )),
+                  menuPadding: widget.menuPadding,
+                  getInitPeers: () => gFFI.groupModel.peers)),
         )
       ],
     );
   }
 
-  Widget _buildPortrait() {
+  Widget _buildMobile() {
     return Column(
       children: [
         Container(
@@ -115,8 +114,8 @@ class _MyGroupState extends State<MyGroup> {
           child: Align(
               alignment: Alignment.topLeft,
               child: MyGroupPeerView(
-                menuPadding: widget.menuPadding,
-              )),
+                  menuPadding: widget.menuPadding,
+                  getInitPeers: () => gFFI.groupModel.peers)),
         )
       ],
     );
@@ -160,14 +159,14 @@ class _MyGroupState extends State<MyGroup> {
         }
         return true;
       }).toList();
-      listView(bool isPortrait) => ListView.builder(
-          shrinkWrap: isPortrait,
+      final listView = ListView.builder(
+          shrinkWrap: isMobile,
           itemCount: items.length,
           itemBuilder: (context, index) => _buildUserItem(items[index]));
       var maxHeight = max(MediaQuery.of(context).size.height / 6, 100.0);
-      return Obx(() => stateGlobal.isPortrait.isFalse
-          ? listView(false)
-          : LimitedBox(maxHeight: maxHeight, child: listView(true)));
+      return (isDesktop || isWebDesktop)
+          ? listView
+          : LimitedBox(maxHeight: maxHeight, child: listView);
     });
   }
 

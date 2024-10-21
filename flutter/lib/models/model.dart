@@ -4,18 +4,15 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:bot_toast/bot_toast.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_hbb/common/widgets/peers_view.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/cm_file_model.dart';
 import 'package:flutter_hbb/models/file_model.dart';
 import 'package:flutter_hbb/models/group_model.dart';
-import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
@@ -270,8 +267,6 @@ class FfiModel with ChangeNotifier {
       var name = evt['name'];
       if (name == 'msgbox') {
         handleMsgBox(evt, sessionId, peerId);
-      } else if (name == 'toast') {
-        handleToast(evt, sessionId, peerId);
       } else if (name == 'set_multiple_windows_session') {
         handleMultipleWindowsSession(evt, sessionId, peerId);
       } else if (name == 'peer_info') {
@@ -309,13 +304,8 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'job_progress') {
         parent.target?.fileModel.jobController.tryUpdateJobProgress(evt);
       } else if (name == 'job_done') {
-        bool? refresh =
-            await parent.target?.fileModel.jobController.jobDone(evt);
-        if (refresh == true) {
-          // many job done for delete directory
-          // todo: refresh may not work when confirm delete local directory
-          parent.target?.fileModel.refreshAll();
-        }
+        parent.target?.fileModel.jobController.jobDone(evt);
+        parent.target?.fileModel.refreshAll();
       } else if (name == 'job_error') {
         parent.target?.fileModel.jobController.jobError(evt);
       } else if (name == 'override_file_confirm') {
@@ -375,7 +365,7 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'plugin_option') {
         handleOption(evt);
       } else if (name == "sync_peer_hash_password_to_personal_ab") {
-        if (desktopType == DesktopType.main || isWeb) {
+        if (desktopType == DesktopType.main) {
           final id = evt['id'];
           final hash = evt['hash'];
           if (id != null && hash != null) {
@@ -393,10 +383,6 @@ class FfiModel with ChangeNotifier {
         handleFollowCurrentDisplay(evt, sessionId, peerId);
       } else if (name == 'use_texture_render') {
         _handleUseTextureRender(evt, sessionId, peerId);
-      } else if (name == "selected_files") {
-        if (isWeb) {
-          parent.target?.fileModel.onSelectedFiles(evt);
-        }
       } else {
         debugPrint('Event is not handled in the fixed branch: $name');
       }
@@ -506,12 +492,10 @@ class FfiModel with ChangeNotifier {
     newDisplay.width = int.tryParse(evt['width']) ?? newDisplay.width;
     newDisplay.height = int.tryParse(evt['height']) ?? newDisplay.height;
     newDisplay.cursorEmbedded = int.tryParse(evt['cursor_embedded']) == 1;
-    newDisplay.originalWidth = int.tryParse(
-            evt['original_width'] ?? kInvalidResolutionValue.toString()) ??
-        kInvalidResolutionValue;
-    newDisplay.originalHeight = int.tryParse(
-            evt['original_height'] ?? kInvalidResolutionValue.toString()) ??
-        kInvalidResolutionValue;
+    newDisplay.originalWidth =
+        int.tryParse(evt['original_width']) ?? kInvalidResolutionValue;
+    newDisplay.originalHeight =
+        int.tryParse(evt['original_height']) ?? kInvalidResolutionValue;
     newDisplay._scale = _pi.scaleOfDisplay(display);
     _pi.displays[display] = newDisplay;
 
@@ -595,37 +579,6 @@ class FfiModel with ChangeNotifier {
     } else {
       final hasRetry = evt['hasRetry'] == 'true';
       showMsgBox(sessionId, type, title, text, link, hasRetry, dialogManager);
-    }
-  }
-
-  handleToast(Map<String, dynamic> evt, SessionID sessionId, String peerId) {
-    final type = evt['type'] ?? 'info';
-    final text = evt['text'] ?? '';
-    final durMsc = evt['dur_msec'] ?? 2000;
-    final duration = Duration(milliseconds: durMsc);
-    if ((text).isEmpty) {
-      BotToast.showLoading(
-        duration: duration,
-        clickClose: true,
-        allowClick: true,
-      );
-    } else {
-      if (type.contains('error')) {
-        BotToast.showText(
-          contentColor: Colors.red,
-          text: translate(text),
-          duration: duration,
-          clickClose: true,
-          onlyOne: true,
-        );
-      } else {
-        BotToast.showText(
-          text: translate(text),
-          duration: duration,
-          clickClose: true,
-          onlyOne: true,
-        );
-      }
     }
   }
 
@@ -835,7 +788,7 @@ class FfiModel with ChangeNotifier {
         isRefreshing = false;
       }
       Map<String, dynamic> features = json.decode(evt['features']);
-      _pi.features.privacyMode = features['privacy_mode'] == true;
+      _pi.features.privacyMode = features['privacy_mode'] == 1;
       if (!isCache) {
         handleResolutions(peerId, evt["resolutions"]);
       }
@@ -879,7 +832,7 @@ class FfiModel with ChangeNotifier {
       for (final mode in [kKeyMapMode, kKeyLegacyMode]) {
         if (bind.sessionIsKeyboardModeSupported(
             sessionId: sessionId, mode: mode)) {
-          await bind.sessionSetKeyboardMode(sessionId: sessionId, value: mode);
+          bind.sessionSetKeyboardMode(sessionId: sessionId, value: mode);
           break;
         }
       }
@@ -1224,27 +1177,6 @@ class ImageModel with ChangeNotifier {
   addCallbackOnFirstImage(Function(String) cb) => callbacksOnFirstImage.add(cb);
 
   clearImage() => _image = null;
-
-  bool _webDecodingRgba = false;
-  final List<Uint8List> _webRgbaList = List.empty(growable: true);
-  webOnRgba(int display, Uint8List rgba) async {
-    // deep copy needed, otherwise "instantiateCodec failed: TypeError: Cannot perform Construct on a detached ArrayBuffer"
-    _webRgbaList.add(Uint8List.fromList(rgba));
-    if (_webDecodingRgba) {
-      return;
-    }
-    _webDecodingRgba = true;
-    try {
-      while (_webRgbaList.isNotEmpty) {
-        final rgba2 = _webRgbaList.last;
-        _webRgbaList.clear();
-        await decodeAndUpdate(display, rgba2);
-      }
-    } catch (e) {
-      debugPrint('onRgba error: $e');
-    }
-    _webDecodingRgba = false;
-  }
 
   onRgba(int display, Uint8List rgba) async {
     try {
@@ -2246,7 +2178,6 @@ class CursorModel with ChangeNotifier {
       debugPrint("deleting cursor with key $k");
       deleteCustomCursor(k);
     }
-    resetSystemCursor();
   }
 
   trySetRemoteWindowCoords() {
@@ -2293,10 +2224,8 @@ class QualityMonitorModel with ChangeNotifier {
 
   updateQualityStatus(Map<String, dynamic> evt) {
     try {
-      if (evt.containsKey('speed') && (evt['speed'] as String).isNotEmpty) {
-        _data.speed = evt['speed'];
-      }
-      if (evt.containsKey('fps') && (evt['fps'] as String).isNotEmpty) {
+      if ((evt['speed'] as String).isNotEmpty) _data.speed = evt['speed'];
+      if ((evt['fps'] as String).isNotEmpty) {
         final fps = jsonDecode(evt['fps']) as Map<String, dynamic>;
         final pi = parent.target?.ffiModel.pi;
         if (pi != null) {
@@ -2317,18 +2246,14 @@ class QualityMonitorModel with ChangeNotifier {
           _data.fps = null;
         }
       }
-      if (evt.containsKey('delay') && (evt['delay'] as String).isNotEmpty) {
-        _data.delay = evt['delay'];
-      }
-      if (evt.containsKey('target_bitrate') &&
-          (evt['target_bitrate'] as String).isNotEmpty) {
+      if ((evt['delay'] as String).isNotEmpty) _data.delay = evt['delay'];
+      if ((evt['target_bitrate'] as String).isNotEmpty) {
         _data.targetBitrate = evt['target_bitrate'];
       }
-      if (evt.containsKey('codec_format') &&
-          (evt['codec_format'] as String).isNotEmpty) {
+      if ((evt['codec_format'] as String).isNotEmpty) {
         _data.codecFormat = evt['codec_format'];
       }
-      if (evt.containsKey('chroma') && (evt['chroma'] as String).isNotEmpty) {
+      if ((evt['chroma'] as String).isNotEmpty) {
         _data.chroma = evt['chroma'];
       }
       notifyListeners();
@@ -2458,9 +2383,6 @@ class FFI {
   late final ElevationModel elevationModel; // session
   late final CmFileModel cmFileModel; // cm
   late final TextureModel textureModel; //session
-  late final Peers recentPeersModel; // global
-  late final Peers favoritePeersModel; // global
-  late final Peers lanPeersModel; // global
 
   FFI(SessionID? sId) {
     sessionId = sId ?? (isDesktop ? Uuid().v4obj() : _constSessionId);
@@ -2481,16 +2403,6 @@ class FFI {
     elevationModel = ElevationModel(WeakReference(this));
     cmFileModel = CmFileModel(WeakReference(this));
     textureModel = TextureModel(WeakReference(this));
-    recentPeersModel = Peers(
-        name: PeersModelName.recent,
-        loadEvent: LoadEvent.recent,
-        getInitPeers: null);
-    favoritePeersModel = Peers(
-        name: PeersModelName.favorite,
-        loadEvent: LoadEvent.favorite,
-        getInitPeers: null);
-    lanPeersModel = Peers(
-        name: PeersModelName.lan, loadEvent: LoadEvent.lan, getInitPeers: null);
   }
 
   /// Mobile reuse FFI
@@ -2585,7 +2497,6 @@ class FFI {
         onEvent2UIRgba();
         imageModel.onRgba(display, data);
       });
-      this.id = id;
       return;
     }
 

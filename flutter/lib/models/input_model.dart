@@ -177,7 +177,7 @@ class PointerEventToRust {
   }
 }
 
-class ToReleaseRawKeys {
+class ToReleaseKeys {
   RawKeyEvent? lastLShiftKeyEvent;
   RawKeyEvent? lastRShiftKeyEvent;
   RawKeyEvent? lastLCtrlKeyEvent;
@@ -282,48 +282,6 @@ class ToReleaseRawKeys {
   }
 }
 
-class ToReleaseKeys {
-  KeyEvent? lastLShiftKeyEvent;
-  KeyEvent? lastRShiftKeyEvent;
-  KeyEvent? lastLCtrlKeyEvent;
-  KeyEvent? lastRCtrlKeyEvent;
-  KeyEvent? lastLAltKeyEvent;
-  KeyEvent? lastRAltKeyEvent;
-  KeyEvent? lastLCommandKeyEvent;
-  KeyEvent? lastRCommandKeyEvent;
-  KeyEvent? lastSuperKeyEvent;
-
-  reset() {
-    lastLShiftKeyEvent = null;
-    lastRShiftKeyEvent = null;
-    lastLCtrlKeyEvent = null;
-    lastRCtrlKeyEvent = null;
-    lastLAltKeyEvent = null;
-    lastRAltKeyEvent = null;
-    lastLCommandKeyEvent = null;
-    lastRCommandKeyEvent = null;
-    lastSuperKeyEvent = null;
-  }
-
-  release(KeyEventResult Function(KeyEvent e) handleKeyEvent) {
-    for (final key in [
-      lastLShiftKeyEvent,
-      lastRShiftKeyEvent,
-      lastLCtrlKeyEvent,
-      lastRCtrlKeyEvent,
-      lastLAltKeyEvent,
-      lastRAltKeyEvent,
-      lastLCommandKeyEvent,
-      lastRCommandKeyEvent,
-      lastSuperKeyEvent,
-    ]) {
-      if (key != null) {
-        handleKeyEvent(key);
-      }
-    }
-  }
-}
-
 class InputModel {
   final WeakReference<FFI> parent;
   String keyboardMode = '';
@@ -334,7 +292,6 @@ class InputModel {
   var alt = false;
   var command = false;
 
-  final ToReleaseRawKeys toReleaseRawKeys = ToReleaseRawKeys();
   final ToReleaseKeys toReleaseKeys = ToReleaseKeys();
 
   // trackpad
@@ -382,99 +339,10 @@ class InputModel {
     }
   }
 
-  void handleKeyDownEventModifiers(KeyEvent e) {
-    KeyUpEvent upEvent(e) => KeyUpEvent(
-          physicalKey: e.physicalKey,
-          logicalKey: e.logicalKey,
-          timeStamp: e.timeStamp,
-        );
-    if (e.logicalKey == LogicalKeyboardKey.altLeft) {
-      if (!alt) {
-        alt = true;
-      }
-      toReleaseKeys.lastLAltKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.altRight) {
-      if (!alt) {
-        alt = true;
-      }
-      toReleaseKeys.lastLAltKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.controlLeft) {
-      if (!ctrl) {
-        ctrl = true;
-      }
-      toReleaseKeys.lastLCtrlKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.controlRight) {
-      if (!ctrl) {
-        ctrl = true;
-      }
-      toReleaseKeys.lastRCtrlKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.shiftLeft) {
-      if (!shift) {
-        shift = true;
-      }
-      toReleaseKeys.lastLShiftKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.shiftRight) {
-      if (!shift) {
-        shift = true;
-      }
-      toReleaseKeys.lastRShiftKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.metaLeft) {
-      if (!command) {
-        command = true;
-      }
-      toReleaseKeys.lastLCommandKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.metaRight) {
-      if (!command) {
-        command = true;
-      }
-      toReleaseKeys.lastRCommandKeyEvent = upEvent(e);
-    } else if (e.logicalKey == LogicalKeyboardKey.superKey) {
-      if (!command) {
-        command = true;
-      }
-      toReleaseKeys.lastSuperKeyEvent = upEvent(e);
-    }
-  }
-
-  void handleKeyUpEventModifiers(KeyEvent e) {
-    if (e.logicalKey == LogicalKeyboardKey.altLeft) {
-      alt = false;
-      toReleaseKeys.lastLAltKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.altRight) {
-      alt = false;
-      toReleaseKeys.lastRAltKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.controlLeft) {
-      ctrl = false;
-      toReleaseKeys.lastLCtrlKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.controlRight) {
-      ctrl = false;
-      toReleaseKeys.lastRCtrlKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.shiftLeft) {
-      shift = false;
-      toReleaseKeys.lastLShiftKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.shiftRight) {
-      shift = false;
-      toReleaseKeys.lastRShiftKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.metaLeft) {
-      command = false;
-      toReleaseKeys.lastLCommandKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.metaRight) {
-      command = false;
-      toReleaseKeys.lastRCommandKeyEvent = null;
-    } else if (e.logicalKey == LogicalKeyboardKey.superKey) {
-      command = false;
-      toReleaseKeys.lastSuperKeyEvent = null;
-    }
-  }
-
   KeyEventResult handleRawKeyEvent(RawKeyEvent e) {
     if (isViewOnly) return KeyEventResult.handled;
-    if (!isInputSourceFlutter) {
-      if (isDesktop) {
-        return KeyEventResult.handled;
-      } else if (isWeb) {
-        return KeyEventResult.ignored;
-      }
+    if ((isDesktop || isWebDesktop) && !isInputSourceFlutter) {
+      return KeyEventResult.handled;
     }
 
     final key = e.logicalKey;
@@ -490,7 +358,7 @@ class InputModel {
           command = true;
         }
       }
-      toReleaseRawKeys.updateKeyDown(key, e);
+      toReleaseKeys.updateKeyDown(key, e);
     }
     if (e is RawKeyUpEvent) {
       if (key == LogicalKeyboardKey.altLeft ||
@@ -508,50 +376,12 @@ class InputModel {
         command = false;
       }
 
-      toReleaseRawKeys.updateKeyUp(key, e);
+      toReleaseKeys.updateKeyUp(key, e);
     }
 
     // * Currently mobile does not enable map mode
-    if ((isDesktop || isWebDesktop) && keyboardMode == kKeyMapMode) {
-      mapKeyboardModeRaw(e);
-    } else {
-      legacyKeyboardModeRaw(e);
-    }
-
-    return KeyEventResult.handled;
-  }
-
-  KeyEventResult handleKeyEvent(KeyEvent e) {
-    if (isViewOnly) return KeyEventResult.handled;
-    if (!isInputSourceFlutter) {
-      if (isDesktop) {
-        return KeyEventResult.handled;
-      } else if (isWeb) {
-        return KeyEventResult.ignored;
-      }
-    }
-    if (isWindows || isLinux) {
-      // Ignore meta keys. Because flutter window will loose focus if meta key is pressed.
-      if (e.physicalKey == PhysicalKeyboardKey.metaLeft ||
-          e.physicalKey == PhysicalKeyboardKey.metaRight) {
-        return KeyEventResult.handled;
-      }
-    }
-
-    if (e is KeyUpEvent) {
-      handleKeyUpEventModifiers(e);
-    } else if (e is KeyDownEvent) {
-      handleKeyDownEventModifiers(e);
-    }
-
-    // * Currently mobile does not enable map mode
-    if ((isDesktop || isWebDesktop) && keyboardMode == kKeyMapMode) {
-      // FIXME: e.character is wrong for dead keys, eg: ^ in de
-      newKeyboardMode(
-          e.character ?? '',
-          e.physicalKey.usbHidUsage & 0xFFFF,
-          // Show repeat event be converted to "release+press" events?
-          e is KeyDownEvent || e is KeyRepeatEvent);
+    if ((isDesktop || isWebDesktop) && keyboardMode == 'map') {
+      mapKeyboardMode(e);
     } else {
       legacyKeyboardMode(e);
     }
@@ -559,33 +389,7 @@ class InputModel {
     return KeyEventResult.handled;
   }
 
-  /// Send Key Event
-  void newKeyboardMode(String character, int usbHid, bool down) {
-    const capslock = 1;
-    const numlock = 2;
-    const scrolllock = 3;
-    int lockModes = 0;
-    if (HardwareKeyboard.instance.lockModesEnabled
-        .contains(KeyboardLockMode.capsLock)) {
-      lockModes |= (1 << capslock);
-    }
-    if (HardwareKeyboard.instance.lockModesEnabled
-        .contains(KeyboardLockMode.numLock)) {
-      lockModes |= (1 << numlock);
-    }
-    if (HardwareKeyboard.instance.lockModesEnabled
-        .contains(KeyboardLockMode.scrollLock)) {
-      lockModes |= (1 << scrolllock);
-    }
-    bind.sessionHandleFlutterKeyEvent(
-        sessionId: sessionId,
-        character: character,
-        usbHid: usbHid,
-        lockModes: lockModes,
-        downOrUp: down);
-  }
-
-  void mapKeyboardModeRaw(RawKeyEvent e) {
+  void mapKeyboardMode(RawKeyEvent e) {
     int positionCode = -1;
     int platformCode = -1;
     bool down;
@@ -637,7 +441,7 @@ class InputModel {
         .contains(KeyboardLockMode.scrollLock)) {
       lockModes |= (1 << scrolllock);
     }
-    bind.sessionHandleFlutterRawKeyEvent(
+    bind.sessionHandleFlutterKeyEvent(
         sessionId: sessionId,
         name: name,
         platformCode: platformCode,
@@ -646,7 +450,7 @@ class InputModel {
         downOrUp: down);
   }
 
-  void legacyKeyboardModeRaw(RawKeyEvent e) {
+  void legacyKeyboardMode(RawKeyEvent e) {
     if (e is RawKeyDownEvent) {
       if (e.repeat) {
         sendRawKey(e, press: true);
@@ -660,24 +464,6 @@ class InputModel {
   }
 
   void sendRawKey(RawKeyEvent e, {bool? down, bool? press}) {
-    // for maximum compatibility
-    final label = physicalKeyMap[e.physicalKey.usbHidUsage] ??
-        logicalKeyMap[e.logicalKey.keyId] ??
-        e.logicalKey.keyLabel;
-    inputKey(label, down: down, press: press ?? false);
-  }
-
-  void legacyKeyboardMode(KeyEvent e) {
-    if (e is KeyDownEvent) {
-      sendKey(e, down: true);
-    } else if (e is KeyRepeatEvent) {
-      sendKey(e, press: true);
-    } else if (e is KeyUpEvent) {
-      sendKey(e);
-    }
-  }
-
-  void sendKey(KeyEvent e, {bool? down, bool? press}) {
     // for maximum compatibility
     final label = physicalKeyMap[e.physicalKey.usbHidUsage] ??
         logicalKeyMap[e.logicalKey.keyId] ??
@@ -780,8 +566,7 @@ class InputModel {
   }
 
   void enterOrLeave(bool enter) {
-    toReleaseKeys.release(handleKeyEvent);
-    toReleaseRawKeys.release(handleRawKeyEvent);
+    toReleaseKeys.release(handleRawKeyEvent);
     _pointerMovedAfterEnter = false;
 
     // Fix status
@@ -791,9 +576,6 @@ class InputModel {
     _flingTimer?.cancel();
     if (!isInputSourceFlutter) {
       bind.sessionEnterOrLeave(sessionId: sessionId, enter: enter);
-    }
-    if (!isWeb && enter) {
-      bind.setCurSessionId(sessionId: sessionId);
     }
   }
 
@@ -1382,15 +1164,15 @@ class InputModel {
   // Simulate a key press event.
   // `usbHidUsage` is the USB HID usage code of the key.
   Future<void> tapHidKey(int usbHidUsage) async {
-    newKeyboardMode(kKeyFlutterKey, usbHidUsage, true);
+    inputRawKey(kKeyFlutterKey, usbHidUsage, 0, true);
     await Future.delayed(Duration(milliseconds: 100));
-    newKeyboardMode(kKeyFlutterKey, usbHidUsage, false);
+    inputRawKey(kKeyFlutterKey, usbHidUsage, 0, false);
   }
 
   Future<void> onMobileVolumeUp() async =>
-      await tapHidKey(PhysicalKeyboardKey.audioVolumeUp.usbHidUsage & 0xFFFF);
+      await tapHidKey(PhysicalKeyboardKey.audioVolumeUp.usbHidUsage);
   Future<void> onMobileVolumeDown() async =>
-      await tapHidKey(PhysicalKeyboardKey.audioVolumeDown.usbHidUsage & 0xFFFF);
+      await tapHidKey(PhysicalKeyboardKey.audioVolumeDown.usbHidUsage);
   Future<void> onMobilePower() async =>
-      await tapHidKey(PhysicalKeyboardKey.power.usbHidUsage & 0xFFFF);
+      await tapHidKey(PhysicalKeyboardKey.power.usbHidUsage);
 }

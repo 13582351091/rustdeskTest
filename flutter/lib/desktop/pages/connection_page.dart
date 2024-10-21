@@ -3,10 +3,13 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:animated_bottom_navigation_bar/animated_bottom_navigation_bar.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_hbb/common/widgets/connection_page_title.dart';
 import 'package:flutter_hbb/consts.dart';
+import 'package:flutter_hbb/mobile/pages/home_page.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:window_manager/window_manager.dart';
@@ -60,6 +63,8 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
     _updateTimer?.cancel();
     super.dispose();
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -149,6 +154,7 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
             )
           : basicWidget()),
     ).paddingOnly(right: isIncomingOnly ? 8 : 0);
+
   }
 
   _buildConnStatusMsg() {
@@ -203,6 +209,8 @@ class _ConnectionPageState extends State<ConnectionPage>
 
   bool isPeersLoading = false;
   bool isPeersLoaded = false;
+
+  int _currentIndex = 0;
 
   @override
   void initState() {
@@ -268,34 +276,153 @@ class _ConnectionPageState extends State<ConnectionPage>
     bind.mainOnMainWindowClose();
   }
 
+
+  Widget buildLinkDeskHome(BuildContext context){
+    //appbar和底边栏在外添加-比如homepage处添加
+    return Scaffold(
+      body: Column(
+        mainAxisSize: MainAxisSize.max,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(height: 20,),//不让文字离bar太近
+          //左对齐文字
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16.0), // 设置左边距
+              child: Text(
+                '连接远程设备',
+                style: TextStyle(
+                  color:Color(0xFFFF6F00),
+                  fontFamily: 'Roboto',
+                  fontWeight: FontWeight.w400,
+                  fontSize: 20.0, // 设置文字大小
+                ),
+              ),
+            ),
+          ),
+          SizedBox(height: 20,),//between text field and title
+          //远程id输入框-绑定id controller
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16.0), // 设置左边距
+              child: TextField(
+                autocorrect: false,
+                enableSuggestions: false,
+                keyboardType: TextInputType.visiblePassword,
+                controller: _idController,
+                decoration: InputDecoration(
+                  hintText: '远程设备id',
+                  filled: true,
+                  fillColor: Color(0xFFF6F1F1),//灰色填充
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(height: 20,),//between text field and button
+          //inkwell包裹按钮产生水波纹效果
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0), // 设置左右边距
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween, // 左右分散对齐
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8.0), // 设置按钮间隔
+                    child: InkWell(
+                      onTap: () {
+                        //传输文件
+                        onConnect(isFileTransfer: true);
+
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Color(0xFFFF6F00), // 设置背景色
+                          borderRadius: BorderRadius.circular(20.0), // 设置圆角
+                        ),
+                        padding: EdgeInsets.symmetric(vertical: 3, horizontal: 20),
+                        child: Text(
+                          "传输文件",
+                          style: TextStyle(
+                            color: Color(0xFFFFFFFF),
+                            fontFamily: 'Roboto',
+                            fontWeight: FontWeight.w400,
+                            fontSize: 20.0, // 设置文字大小
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: onConnect,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Color(0xFFFF6F00), // 设置背景色
+                        borderRadius: BorderRadius.circular(20.0), // 设置圆角
+                      ),
+                      padding: EdgeInsets.symmetric(vertical: 3, horizontal: 20),
+                      child: Text(
+                        "连接设备",
+                        style: TextStyle(
+                          color: Color(0xFFFFFFFF),
+                          fontFamily: 'Roboto',
+                          fontWeight: FontWeight.w400,
+                          fontSize: 20.0, // 设置文字大小
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 20,),//between svg image and button
+          //svg图片自适应占位大小
+          Expanded(
+            child:
+            Align(
+              alignment: Alignment.center,
+              child: Container(
+                child: SvgPicture.asset(
+                  'assets/linkDeskHome.svg', // SVG 图片路径
+                  fit: BoxFit.cover, // 设置图片适应方式
+                ),
+              ),
+            ),
+          ),
+
+
+
+
+        ],
+      ),
+
+
+
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isOutgoingOnly = bind.isOutgoingOnly();
-    return Column(
-      children: [
-        Expanded(
-            child: Column(
-          children: [
-            Row(
-              children: [
-                Flexible(child: _buildRemoteIDTextField(context)),
-              ],
-            ).marginOnly(top: 22),
-            SizedBox(height: 12),
-            Divider().paddingOnly(right: 12),
-            Expanded(child: PeerTabPage()),
-          ],
-        ).paddingOnly(left: 12.0)),
-        if (!isOutgoingOnly) const Divider(height: 1),
-        if (!isOutgoingOnly) OnlineStatusWidget()
-      ],
-    );
+    return buildLinkDeskHome(context);
+
   }
 
   /// Callback for the connect button.
   /// Connects to the selected peer.
   void onConnect({bool isFileTransfer = false}) {
+
     var id = _idController.id;
+    print("连接id是${id}");
+    //print('电脑发起一次连接点击');//这里不能对从历史记录找的连接进行影响
     connect(context, id, isFileTransfer: isFileTransfer);
   }
 
@@ -323,7 +450,36 @@ class _ConnectionPageState extends State<ConnectionPage>
       child: Ink(
         child: Column(
           children: [
-            getConnectionPageTitle(context, false).marginOnly(bottom: 15),
+            Row(
+              children: [
+                Expanded(
+                    child: Row(
+                  children: [
+                    AutoSizeText(
+                      translate('Control Remote Desktop'),
+                      maxLines: 1,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.merge(TextStyle(height: 1)),
+                    ).marginOnly(right: 4),
+                    Tooltip(
+                      waitDuration: Duration(milliseconds: 300),
+                      message: translate("id_input_tip"),
+                      child: Icon(
+                        Icons.help_outline_outlined,
+                        size: 16,
+                        color: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.color
+                            ?.withOpacity(0.5),
+                      ),
+                    ),
+                  ],
+                )),
+              ],
+            ).marginOnly(bottom: 15),
             Row(
               children: [
                 Expanded(
@@ -347,7 +503,8 @@ class _ConnectionPageState extends State<ConnectionPage>
                         loginName: '',
                       );
                       return [emptyPeer];
-                    } else {
+                    }
+                    else {
                       String textWithoutSpaces =
                           textEditingValue.text.replaceAll(" ", "");
                       if (int.tryParse(textWithoutSpaces) != null) {

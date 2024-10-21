@@ -16,7 +16,6 @@ import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 
 import 'package:flutter_hbb/models/peer_tab_model.dart';
-import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -108,33 +107,33 @@ class _PeerTabPageState extends State<PeerTabPage>
   Widget build(BuildContext context) {
     final model = Provider.of<PeerTabModel>(context);
     Widget selectionWrap(Widget widget) {
-      return model.multiSelectionMode ? createMultiSelectionBar(model) : widget;
+      return model.multiSelectionMode ? createMultiSelectionBar() : widget;
     }
 
     return Column(
       textBaseline: TextBaseline.ideographic,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Obx(() => SizedBox(
-              height: 32,
-              child: Container(
-                padding: stateGlobal.isPortrait.isTrue
-                    ? EdgeInsets.symmetric(horizontal: 2)
-                    : null,
-                child: selectionWrap(Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                        child: visibleContextMenuListener(
-                            _createSwitchBar(context))),
-                    if (stateGlobal.isPortrait.isTrue)
-                      ..._portraitRightActions(context)
-                    else
-                      ..._landscapeRightActions(context)
-                  ],
-                )),
-              ),
-            ).paddingOnly(right: stateGlobal.isPortrait.isTrue ? 0 : 12)),
+        SizedBox(
+          height: 32,
+          child: Container(
+            padding: (isDesktop || isWebDesktop)
+                ? null
+                : EdgeInsets.symmetric(horizontal: 2),
+            child: selectionWrap(Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                    child:
+                        visibleContextMenuListener(_createSwitchBar(context))),
+                if (isMobile)
+                  ..._mobileRightActions(context)
+                else
+                  ..._desktopRightActions(context)
+              ],
+            )),
+          ),
+        ).paddingOnly(right: (isDesktop || isWebDesktop) ? 12 : 0),
         _createPeersView(),
       ],
     );
@@ -300,7 +299,7 @@ class _PeerTabPageState extends State<PeerTabPage>
   }
 
   Widget visibleContextMenuListener(Widget child) {
-    if (!(isDesktop || isWebDesktop)) {
+    if (isMobile) {
       return GestureDetector(
         onLongPressDown: (e) {
           final x = e.globalPosition.dx;
@@ -362,7 +361,8 @@ class _PeerTabPageState extends State<PeerTabPage>
             .toList());
   }
 
-  Widget createMultiSelectionBar(PeerTabModel model) {
+  Widget createMultiSelectionBar() {
+    final model = Provider.of<PeerTabModel>(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -380,7 +380,7 @@ class _PeerTabPageState extends State<PeerTabPage>
         Row(
           children: [
             selectionCount(model.selectedPeers.length),
-            selectAll(model),
+            selectAll(),
             closeSelection(),
           ],
         )
@@ -456,7 +456,7 @@ class _PeerTabPageState extends State<PeerTabPage>
           showToast(translate('Successful'));
         },
         child: Icon(PeerTabModel.icons[PeerTabIndex.fav.index]),
-      ).marginOnly(left: !(isDesktop || isWebDesktop) ? 11 : 6),
+      ).marginOnly(left: isMobile ? 11 : 6),
     );
   }
 
@@ -477,7 +477,7 @@ class _PeerTabPageState extends State<PeerTabPage>
           model.setMultiSelectionMode(false);
         },
         child: Icon(PeerTabModel.icons[PeerTabIndex.ab.index]),
-      ).marginOnly(left: !(isDesktop || isWebDesktop) ? 11 : 6),
+      ).marginOnly(left: isMobile ? 11 : 6),
     );
   }
 
@@ -500,7 +500,7 @@ class _PeerTabPageState extends State<PeerTabPage>
                 });
               },
               child: Icon(Icons.tag))
-          .marginOnly(left: !(isDesktop || isWebDesktop) ? 11 : 6),
+          .marginOnly(left: isMobile ? 11 : 6),
     );
   }
 
@@ -511,7 +511,8 @@ class _PeerTabPageState extends State<PeerTabPage>
     );
   }
 
-  Widget selectAll(PeerTabModel model) {
+  Widget selectAll() {
+    final model = Provider.of<PeerTabModel>(context);
     return Offstage(
       offstage:
           model.selectedPeers.length >= model.currentTabCachedPeers.length,
@@ -555,10 +556,10 @@ class _PeerTabPageState extends State<PeerTabPage>
         });
   }
 
-  List<Widget> _landscapeRightActions(BuildContext context) {
+  List<Widget> _desktopRightActions(BuildContext context) {
     final model = Provider.of<PeerTabModel>(context);
     return [
-      const PeerSearchBar().marginOnly(right: 13),
+      const PeerSearchBar().marginOnly(right: isMobile ? 0 : 13),
       _createRefresh(
           index: PeerTabIndex.ab, loading: gFFI.abModel.currentAbLoading),
       _createRefresh(
@@ -579,7 +580,7 @@ class _PeerTabPageState extends State<PeerTabPage>
     ];
   }
 
-  List<Widget> _portraitRightActions(BuildContext context) {
+  List<Widget> _mobileRightActions(BuildContext context) {
     final model = Provider.of<PeerTabModel>(context);
     final screenWidth = MediaQuery.of(context).size.width;
     final leftIconSize = Theme.of(context).iconTheme.size ?? 24;
@@ -700,13 +701,13 @@ class _PeerSearchBarState extends State<PeerSearchBar> {
           baseOffset: 0,
           extentOffset: peerSearchTextController.value.text.length);
     });
-    return Obx(() => Container(
-          width: stateGlobal.isPortrait.isTrue ? 120 : 140,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.background,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(
+    return Container(
+      width: isMobile ? 120 : 140,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Obx(() => Row(
             children: [
               Expanded(
                 child: Row(
@@ -767,8 +768,8 @@ class _PeerSearchBarState extends State<PeerSearchBar> {
                 ),
               )
             ],
-          ),
-        ));
+          )),
+    );
   }
 }
 

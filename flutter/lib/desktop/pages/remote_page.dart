@@ -245,10 +245,8 @@ class _RemotePageState extends State<RemotePage>
     super.dispose();
     debugPrint("REMOTE PAGE dispose session $sessionId ${widget.id}");
     _ffi.textureModel.onRemotePageDispose(closeSession);
-    if (closeSession) {
-      // ensure we leave this session, this is a double check
-      _ffi.inputModel.enterOrLeave(false);
-    }
+    // ensure we leave this session, this is a double check
+    _ffi.inputModel.enterOrLeave(false);
     DesktopMultiWindow.removeListener(this);
     _ffi.dialogManager.hideMobileActionsOverlay();
     _ffi.imageModel.disposeImage();

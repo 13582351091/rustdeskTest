@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:animated_bottom_navigation_bar/animated_bottom_navigation_bar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,17 +14,23 @@ import 'package:flutter_hbb/desktop/pages/connection_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/desktop/widgets/scroll_wrapper.dart';
+import 'package:flutter_hbb/main.dart';
+import 'package:flutter_hbb/mobile/pages/home_page.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/plugin/ui_manager.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:window_size/window_size.dart' as window_size;
-
+import '../../mobile/pages/settings_page.dart';
 import '../widgets/button.dart';
+import 'person_page.dart';//自定义个人页面,保存用户信息
+
+
 
 class DesktopHomePage extends StatefulWidget {
   const DesktopHomePage({Key? key}) : super(key: key);
@@ -55,19 +62,84 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
   final GlobalKey _childKey = GlobalKey();
 
+  int _currentIndex = 0;//底部跳转栏索引，同时对应page list的页面
+  final List<dynamic> _pages = [];
+
+
+  void initPages() {
+    //添加页面list
+    _pages.clear();
+    _pages.addAll([ConnectionPage(),PersonPage()]);
+
+  }
+
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final isIncomingOnly = bind.isIncomingOnly();
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        buildLeftPane(context),
-        if (!isIncomingOnly) const VerticalDivider(width: 1),
-        if (!isIncomingOnly) Expanded(child: buildRightPane(context)),
-      ],
-    );
+
+    //使用willPop自定义显示page list的页面作为home page
+    return WillPopScope(
+        onWillPop: () async {
+          if (_currentIndex!= 0) {
+            setState(() {
+              _currentIndex = 0;
+            });
+          } else {
+            return true;
+          }
+          return false;
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            backgroundColor: Color(0xFFFFFFFF),
+            title: const Text(
+              "LinkDesk",
+              style: TextStyle(
+                color: Color(0xFFFF6F00),
+                fontFamily: 'Roboto',
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            leading: IconButton(
+              icon: Icon(Icons.person, color: Colors.black),
+              onPressed: () {
+                setState(() {
+                  _currentIndex = 1;//跳转到第二个页面即person页面
+                });
+              },
+            ),
+            actions: [
+              //这里可以添加search等效果
+            ],
+          ),
+          body: _pages.elementAt(_currentIndex),
+          bottomNavigationBar: AnimatedBottomNavigationBar(
+            icons: <IconData>[
+              Icons.home,
+              Icons.person
+            ],
+            activeIndex: _currentIndex,
+            onTap: (index){
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            gapLocation: GapLocation.center,
+            notchSmoothness: NotchSmoothness.verySmoothEdge,
+            activeColor: Color(0xFFFF6F00),
+
+          ),
+        ));
+
+
   }
+
+
+
+
+
 
   Widget buildLeftPane(BuildContext context) {
     final isIncomingOnly = bind.isIncomingOnly();
@@ -157,7 +229,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                         if (DesktopSettingPage.tabKeys.isNotEmpty)
                           {
                             DesktopSettingPage.switch2page(
-                                DesktopSettingPage.tabKeys[0])
+                                DesktopSettingPage.tabKeys[0]),
+
                           }
                       },
                       onHover: (value) => _editHover.value = value,
@@ -660,21 +733,16 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     );
   }
 
+
+
+
   @override
   void initState() {
     super.initState();
     if (!bind.isCustomClient()) {
-      platformFFI.registerEventHandler(
-          kCheckSoftwareUpdateFinish, kCheckSoftwareUpdateFinish,
-          (Map<String, dynamic> evt) async {
-        if (evt['url'] is String) {
-          setState(() {
-            updateUrl = evt['url'];
-          });
-        }
-      });
       Timer(const Duration(seconds: 1), () async {
-        bind.mainGetSoftwareUpdateUrl();
+        updateUrl = await bind.mainGetSoftwareUpdateUrl();
+        if (updateUrl.isNotEmpty) setState(() {});
       });
     }
     _updateTimer = periodic_immediate(const Duration(seconds: 1), () async {
@@ -811,6 +879,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         _updateWindowSize();
       });
     }
+
+    //初始化home需要显示的页面
+    initPages();
+
+
+
   }
 
   _updateWindowSize() {
@@ -832,10 +906,6 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     _uniLinksSubscription?.cancel();
     Get.delete<RxBool>(tag: 'stop-service');
     _updateTimer?.cancel();
-    if (!bind.isCustomClient()) {
-      platformFFI.unregisterEventHandler(
-          kCheckSoftwareUpdateFinish, kCheckSoftwareUpdateFinish);
-    }
     super.dispose();
   }
 
@@ -869,7 +939,6 @@ void setPasswordDialog({VoidCallback? notEmptyCallback}) async {
     // SpecialCharacterValidationRule(),
     MinCharactersValidationRule(8),
   ];
-  final maxLength = bind.mainMaxEncryptLen();
 
   gFFI.dialogManager.show((setState, close, context) {
     submit() {
@@ -928,7 +997,6 @@ void setPasswordDialog({VoidCallback? notEmptyCallback}) async {
                         errMsg0 = '';
                       });
                     },
-                    maxLength: maxLength,
                   ),
                 ),
               ],
@@ -955,7 +1023,6 @@ void setPasswordDialog({VoidCallback? notEmptyCallback}) async {
                         errMsg1 = '';
                       });
                     },
-                    maxLength: maxLength,
                   ),
                 ),
               ],

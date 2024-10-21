@@ -57,9 +57,6 @@ class _RemotePageState extends State<RemotePage> {
 
   final TextEditingController _textController =
       TextEditingController(text: initText);
-  // This timer is used to check the composing status of the soft keyboard.
-  // It is used for Android, Korean(and other similar) input method.
-  Timer? _composingTimer;
 
   _RemotePageState(String id) {
     initSharedStates(id);
@@ -107,7 +104,6 @@ class _RemotePageState extends State<RemotePage> {
     _physicalFocusNode.dispose();
     await gFFI.close();
     _timer?.cancel();
-    _composingTimer?.cancel();
     gFFI.dialogManager.dismissAll();
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
@@ -143,7 +139,6 @@ class _RemotePageState extends State<RemotePage> {
           gFFI.ffiModel.pi.version.isNotEmpty) {
         gFFI.invokeMethod("enable_soft_keyboard", false);
       }
-      _composingTimer?.cancel();
     } else {
       _timer?.cancel();
       _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
@@ -160,9 +155,9 @@ class _RemotePageState extends State<RemotePage> {
     var oldValue = _value;
     _value = newValue;
     var i = newValue.length - 1;
-    for (; i >= 0 && newValue[i] != '1'; --i) {}
+    for (; i >= 0 && newValue[i] != '\1'; --i) {}
     var j = oldValue.length - 1;
-    for (; j >= 0 && oldValue[j] != '1'; --j) {}
+    for (; j >= 0 && oldValue[j] != '\1'; --j) {}
     if (i < j) j = i;
     var subNewValue = newValue.substring(j + 1);
     var subOldValue = oldValue.substring(j + 1);
@@ -207,19 +202,12 @@ class _RemotePageState extends State<RemotePage> {
   }
 
   void _handleNonIOSSoftKeyboardInput(String newValue) {
-        _composingTimer?.cancel();
-    if (_textController.value.isComposingRangeValid) {
-      _composingTimer = Timer(Duration(milliseconds: 25), () {
-        _handleNonIOSSoftKeyboardInput(_textController.value.text);
-      });
-      return;
-    }
     var oldValue = _value;
     _value = newValue;
     if (oldValue.isNotEmpty &&
         newValue.isNotEmpty &&
-        oldValue[0] == '1' &&
-        newValue[0] != '1') {
+        oldValue[0] == '\1' &&
+        newValue[0] != '\1') {
       // clipboard
       oldValue = '';
     }
@@ -254,14 +242,10 @@ class _RemotePageState extends State<RemotePage> {
     }
   }
 
-  Future<void> handleSoftKeyboardInput(String newValue) async {
+  // handle mobile virtual keyboard
+  void handleSoftKeyboardInput(String newValue) {
     if (isIOS) {
-      // fix: TextFormField onChanged event triggered multiple times when Korean input
-      // https://github.com/rustdesk/rustdesk/pull/9644
-      await Future.delayed(const Duration(milliseconds: 10));
-
-      if (newValue != _textController.text) return;
-      _handleIOSSoftKeyboardInput(_textController.text);
+      _handleIOSSoftKeyboardInput(newValue);
     } else {
       _handleNonIOSSoftKeyboardInput(newValue);
     }

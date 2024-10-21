@@ -27,10 +27,6 @@ class RawKeyFocusScope extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // https://github.com/flutter/flutter/issues/154053
-    final useRawKeyEvents = isLinux && !isWeb;
-    // FIXME: On Windows, `AltGr` will generate `Alt` and `Control` key events,
-    // while `Alt` and `Control` are seperated key events for en-US input method.
     return FocusScope(
         autofocus: true,
         child: Focus(
@@ -38,14 +34,8 @@ class RawKeyFocusScope extends StatelessWidget {
             canRequestFocus: true,
             focusNode: focusNode,
             onFocusChange: onFocusChange,
-            onKey: useRawKeyEvents
-                ? (FocusNode data, RawKeyEvent event) =>
-                    inputModel.handleRawKeyEvent(event)
-                : null,
-            onKeyEvent: useRawKeyEvents
-                ? null
-                : (FocusNode node, KeyEvent event) =>
-                    inputModel.handleKeyEvent(event),
+            onKey: (FocusNode data, RawKeyEvent e) =>
+                inputModel.handleRawKeyEvent(e),
             child: child));
   }
 }
@@ -243,7 +233,7 @@ class _RawTouchGestureDetectorRegionState
       if (ffi.cursorModel.shouldBlock(d.localPosition.dx, d.localPosition.dy)) {
         return;
       }
-      if (isDesktop || isWebDesktop) {
+      if (isDesktop) {
         ffi.cursorModel.trySetRemoteWindowCoords();
       }
       // Workaround for the issue that the first pan event is sent a long time after the start event.
@@ -285,7 +275,7 @@ class _RawTouchGestureDetectorRegionState
     if (lastDeviceKind != PointerDeviceKind.touch) {
       return;
     }
-    if (isDesktop || isWebDesktop) {
+    if (isDesktop) {
       ffi.cursorModel.clearRemoteWindowCoords();
     }
     inputModel.sendMouse('up', MouseButtons.left);
