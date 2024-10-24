@@ -522,9 +522,9 @@ jobs:
           rustup target add ${{ matrix.job.target }}
           cargo build --features flutter,hwcodec --release --target aarch64-apple-ios --lib
           
-     ##custom artifact to ios .a
+
       - name: Upload Artifacts ios liba
-         # if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
+        
          uses: actions/upload-artifact@master
          with:
            name: liblibrustdesk.a
