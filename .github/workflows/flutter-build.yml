@@ -524,11 +524,10 @@ jobs:
           
 
       - name: Upload Artifacts ios liba
-        
-         uses: actions/upload-artifact@master
-         with:
-           name: liblibrustdesk.a
-           path: target/aarch64-apple-ios/release/liblibrustdesk.a
+        uses: actions/upload-artifact@master
+        with:
+          name: liblibrustdesk.a
+          path: target/aarch64-apple-ios/release/liblibrustdesk.a
 
       - name: Build rustdesk
         shell: bash
