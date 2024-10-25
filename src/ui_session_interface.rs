@@ -389,22 +389,17 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(LoginConfigHandler::refresh()));
     }
 
-    pub fn record_screen(&self, start: bool, display: i32, w: i32, h: i32) {
-        self.send(Data::RecordScreen(
-            start,
-            display as usize,
-            w,
-            h,
-            self.get_id(),
-        ));
-    }
-
-    pub fn record_status(&self, status: bool) {
+    pub fn record_screen(&self, start: bool) {
         let mut misc = Misc::new();
-        misc.set_client_record_status(status);
+        misc.set_client_record_status(start);
         let mut msg = Message::new();
         msg.set_misc(misc);
         self.send(Data::Message(msg));
+        self.send(Data::RecordScreen(start));
+    }
+
+    pub fn is_recording(&self) -> bool {
+        self.lc.read().unwrap().record
     }
 
     pub fn save_custom_image_quality(&self, custom_image_quality: i32) {
@@ -1494,6 +1489,10 @@ impl<T: InvokeUiSession> Session<T> {
         msg.set_misc(misc);
         self.send(Data::Message(msg));
     }
+
+    pub fn get_conn_token(&self) -> Option<String> {
+        self.lc.read().unwrap().get_conn_token()
+    }
 }
 
 pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
@@ -1557,6 +1556,7 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn set_current_display(&self, disp_idx: i32);
     #[cfg(feature = "flutter")]
     fn is_multi_ui_session(&self) -> bool;
+    fn update_record_status(&self, start: bool);
 }
 
 impl<T: InvokeUiSession> Deref for Session<T> {
