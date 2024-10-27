@@ -39,7 +39,6 @@ pub fn core_main() -> Option<Vec<String>> {
     let mut _is_run_as_system = false;
     let mut _is_quick_support = false;
     let mut _is_flutter_invoke_new_connection = false;
-    let mut no_server = false;
     let mut arg_exe = Default::default();
     for arg in std::env::args() {
         if i == 0 {
@@ -63,8 +62,6 @@ pub fn core_main() -> Option<Vec<String>> {
                 _is_run_as_system = true;
             } else if arg == "--quick_support" {
                 _is_quick_support = true;
-            } else if arg == "--no-server" {
-                no_server = true;
             } else {
                 args.push(arg);
             }
@@ -137,7 +134,6 @@ pub fn core_main() -> Option<Vec<String>> {
         }
     }
     hbb_common::init_log(false, &log_name);
-    log::info!("main start args: {:?}, env: {:?}", args, std::env::args());
 
     // linux uni (url) go here.
     #[cfg(all(target_os = "linux", feature = "flutter"))]
@@ -165,8 +161,9 @@ pub fn core_main() -> Option<Vec<String>> {
     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     init_plugins(&args);
+    log::info!("main start args:{:?}", args);
     if args.is_empty() || crate::common::is_empty_uni_link(&args[0]) {
-        std::thread::spawn(move || crate::start_server(false, no_server));
+        std::thread::spawn(move || crate::start_server(false));
     } else {
         #[cfg(windows)]
         {
@@ -282,11 +279,11 @@ pub fn core_main() -> Option<Vec<String>> {
             crate::privacy_mode::restore_reg_connectivity(true);
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
-                crate::start_server(true, false);
+                crate::start_server(true);
             }
             #[cfg(target_os = "macos")]
             {
-                let handler = std::thread::spawn(move || crate::start_server(true, false));
+                let handler = std::thread::spawn(move || crate::start_server(true));
                 crate::tray::start_tray();
                 // prevent server exit when encountering errors from tray
                 hbb_common::allow_err!(handler.join());
@@ -476,18 +473,8 @@ pub fn core_main() -> Option<Vec<String>> {
             crate::ui_interface::start_option_status_sync();
         } else if args[0] == "--cm-no-ui" {
             #[cfg(feature = "flutter")]
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            {
-                crate::ui_interface::start_option_status_sync();
-                crate::flutter::connection_manager::start_cm_no_ui();
-            }
-            return None;
-        } else if args[0] == "-gtk-sudo" {
-            // rustdesk service kill `rustdesk --` processes
-            #[cfg(target_os = "linux")]
-            if args.len() > 2 {
-                crate::platform::gtk_sudo::exec();
-            }
+            #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "windows")))]
+            crate::flutter::connection_manager::start_cm_no_ui();
             return None;
         } else {
             #[cfg(all(feature = "flutter", feature = "plugin_framework"))]

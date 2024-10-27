@@ -11,8 +11,6 @@ use std::{
     sync::mpsc::{channel, RecvTimeoutError, Sender},
     time::Duration,
 };
-#[cfg(windows)]
-use tokio::runtime::Runtime;
 
 struct Handler {
     sp: EmptyExtraFieldService,
@@ -20,8 +18,6 @@ struct Handler {
     tx_cb_result: Sender<CallbackResult>,
     #[cfg(target_os = "windows")]
     stream: Option<ipc::ConnectionTmpl<parity_tokio_ipc::ConnectionClient>>,
-    #[cfg(target_os = "windows")]
-    rt: Option<Runtime>,
 }
 
 pub fn new() -> GenericService {
@@ -38,8 +34,6 @@ fn run(sp: EmptyExtraFieldService) -> ResultType<()> {
         tx_cb_result,
         #[cfg(target_os = "windows")]
         stream: None,
-        #[cfg(target_os = "windows")]
-        rt: None,
     };
 
     let (tx_start_res, rx_start_res) = channel();
@@ -101,85 +95,58 @@ impl Handler {
                     log::error!("Failed to read clipboard from cm: {}", e);
                 }
                 Ok(data) => {
-                    // Skip sending empty clipboard data.
-                    // Maybe there's something wrong reading the clipboard data in cm, but no error msg is returned.
-                    // The clipboard data should not be empty, the last line will try again to get the clipboard data.
-                    if !data.is_empty() {
-                        let mut msg = Message::new();
-                        let multi_clipboards = MultiClipboards {
-                            clipboards: data
-                                .into_iter()
-                                .map(|c| Clipboard {
-                                    compress: c.compress,
-                                    content: c.content,
-                                    width: c.width,
-                                    height: c.height,
-                                    format: ClipboardFormat::from_i32(c.format)
-                                        .unwrap_or(ClipboardFormat::Text)
-                                        .into(),
-                                    special_name: c.special_name,
-                                    ..Default::default()
-                                })
-                                .collect(),
-                            ..Default::default()
-                        };
-                        msg.set_multi_clipboards(multi_clipboards);
-                        return Some(msg);
-                    }
+                    let mut msg = Message::new();
+                    let multi_clipboards = MultiClipboards {
+                        clipboards: data
+                            .into_iter()
+                            .map(|c| Clipboard {
+                                compress: c.compress,
+                                content: c.content,
+                                width: c.width,
+                                height: c.height,
+                                format: ClipboardFormat::from_i32(c.format)
+                                    .unwrap_or(ClipboardFormat::Text)
+                                    .into(),
+                                ..Default::default()
+                            })
+                            .collect(),
+                        ..Default::default()
+                    };
+                    msg.set_multi_clipboards(multi_clipboards);
+                    return Some(msg);
                 }
             }
         }
         check_clipboard(&mut self.ctx, ClipboardSide::Host, false)
     }
 
-    // Read clipboard data from cm using ipc.
-    //
-    // We cannot use `#[tokio::main(flavor = "current_thread")]` here,
-    // because the auto-managed tokio runtime (async context) will be dropped after the call.
-    // The next call will create a new runtime, which will cause the previous stream to be unusable.
-    // So we need to manage the tokio runtime manually.
+    // It's ok to do async operation in the clipboard service because:
+    // 1. the clipboard is not used frequently.
+    // 2. the clipboard handle is sync and will not block the main thread.
     #[cfg(windows)]
-    fn read_clipboard_from_cm_ipc(&mut self) -> ResultType<Vec<ClipboardNonFile>> {
-        if self.rt.is_none() {
-            self.rt = Some(Runtime::new()?);
-        }
-        let Some(rt) = &self.rt else {
-            // unreachable!
-            bail!("failed to get tokio runtime");
-        };
+    #[tokio::main(flavor = "current_thread")]
+    async fn read_clipboard_from_cm_ipc(&mut self) -> ResultType<Vec<ClipboardNonFile>> {
         let mut is_sent = false;
         if let Some(stream) = &mut self.stream {
             // If previous stream is still alive, reuse it.
             // If the previous stream is dead, `is_sent` will trigger reconnect.
-            is_sent = match rt.block_on(stream.send(&Data::ClipboardNonFile(None))) {
-                Ok(_) => true,
-                Err(e) => {
-                    log::debug!("Failed to send to cm: {}", e);
-                    false
-                }
-            };
+            is_sent = stream.send(&Data::ClipboardNonFile(None)).await.is_ok();
         }
         if !is_sent {
-            let mut stream = rt.block_on(crate::ipc::connect(100, "_cm"))?;
-            rt.block_on(stream.send(&Data::ClipboardNonFile(None)))?;
+            let mut stream = crate::ipc::connect(100, "_cm").await?;
+            stream.send(&Data::ClipboardNonFile(None)).await?;
             self.stream = Some(stream);
         }
 
         if let Some(stream) = &mut self.stream {
             loop {
-                match rt.block_on(stream.next_timeout(800))? {
+                match stream.next_timeout(800).await? {
                     Some(Data::ClipboardNonFile(Some((err, mut contents)))) => {
                         if !err.is_empty() {
                             bail!("{}", err);
                         } else {
                             if contents.iter().any(|c| c.next_raw) {
-                                // Wrap the future with a `Timeout` in an async block to avoid panic.
-                                // We cannot use `rt.block_on(timeout(1000, stream.next_raw()))` here, because it causes panic:
-                                // thread '<unnamed>' panicked at D:\Projects\rust\rustdesk\libs\hbb_common\src\lib.rs:98:5:
-                                // there is no reactor running, must be called from the context of a Tokio 1.x runtime
-                                // note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-                                match rt.block_on(async { timeout(1000, stream.next_raw()).await })
-                                {
+                                match timeout(1000, stream.next_raw()).await {
                                     Ok(Ok(mut data)) => {
                                         for c in &mut contents {
                                             if c.next_raw {
@@ -196,7 +163,7 @@ impl Handler {
                                     Err(e) => {
                                         // Reconnect to avoid the next raw data remaining in the buffer.
                                         self.stream = None;
-                                        log::debug!("Failed to get raw clipboard data: {}", e);
+                                        log::debug!("failed to get raw clipboard data: {}", e);
                                     }
                                 }
                             }

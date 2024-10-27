@@ -5,7 +5,7 @@ use std::{
 };
 
 #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste",))]
-use hbb_common::{allow_err, bail};
+use hbb_common::{allow_err, log};
 use hbb_common::{
     lazy_static,
     tokio::sync::{
@@ -25,8 +25,6 @@ pub use context_send::*;
 const ERR_CODE_SERVER_FUNCTION_NONE: u32 = 0x00000001;
 #[cfg(target_os = "windows")]
 const ERR_CODE_INVALID_PARAMETER: u32 = 0x00000002;
-#[cfg(target_os = "windows")]
-const ERR_CODE_SEND_MSG: u32 = 0x00000003;
 
 pub(crate) use platform::create_cliprdr_context;
 
@@ -132,7 +130,7 @@ impl ClipboardFile {
         )
     }
 
-    pub fn is_beginning_message(&self) -> bool {
+    pub fn is_stopping_allowed_from_peer(&self) -> bool {
         matches!(
             self,
             ClipboardFile::MonitorReady | ClipboardFile::FormatList { .. }
@@ -200,7 +198,7 @@ pub fn get_rx_cliprdr_server(conn_id: i32) -> Arc<TokioMutex<UnboundedReceiver<C
 
 #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste",))]
 #[inline]
-fn send_data(conn_id: i32, data: ClipboardFile) -> ResultType<()> {
+fn send_data(conn_id: i32, data: ClipboardFile) {
     #[cfg(target_os = "windows")]
     return send_data_to_channel(conn_id, data);
     #[cfg(not(target_os = "windows"))]
@@ -212,28 +210,25 @@ fn send_data(conn_id: i32, data: ClipboardFile) -> ResultType<()> {
 }
 #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste",))]
 #[inline]
-fn send_data_to_channel(conn_id: i32, data: ClipboardFile) -> ResultType<()> {
+fn send_data_to_channel(conn_id: i32, data: ClipboardFile) {
+    // no need to handle result here
     if let Some(msg_channel) = VEC_MSG_CHANNEL
         .read()
         .unwrap()
         .iter()
         .find(|x| x.conn_id == conn_id)
     {
-        msg_channel.sender.send(data)?;
-        Ok(())
-    } else {
-        bail!("conn_id not found");
+        allow_err!(msg_channel.sender.send(data));
     }
 }
 
 #[cfg(feature = "unix-file-copy-paste")]
 #[inline]
-fn send_data_to_all(data: ClipboardFile) -> ResultType<()> {
-    // Need more tests to see if it's necessary to handle the error.
+fn send_data_to_all(data: ClipboardFile) {
+    // no need to handle result here
     for msg_channel in VEC_MSG_CHANNEL.read().unwrap().iter() {
         allow_err!(msg_channel.sender.send(data.clone()));
     }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -152,7 +152,7 @@ class PeerTabModel with ChangeNotifier {
       // https://github.com/flutter/flutter/issues/101275#issuecomment-1604541700
       // After onTap, the shift key should be pressed for a while when not in multiselection mode,
       // because onTap is delayed when onDoubleTap is not null
-      if (isDesktop || isWebDesktop) return;
+      if (isDesktop && !_isShiftDown) return;
       _multiSelectionMode = true;
     }
     final cached = _currentTabCachedPeers.map((e) => e.id).toList();
@@ -184,17 +184,10 @@ class PeerTabModel with ChangeNotifier {
     notifyListeners();
   }
 
-  // `notifyListeners()` will cause many rebuilds.
-  // So, we need to reduce the calls to "notifyListeners()" only when necessary.
-  // A better way is to use a new model.
   setCurrentTabCachedPeers(List<Peer> peers) {
     Future.delayed(Duration.zero, () {
-      final isPreEmpty = _currentTabCachedPeers.isEmpty;
       _currentTabCachedPeers = peers;
-      final isNowEmpty = _currentTabCachedPeers.isEmpty;
-      if (isPreEmpty != isNowEmpty) {
-        notifyListeners();
-      }
+      notifyListeners();
     });
   }
 

@@ -253,17 +253,7 @@ impl Capturer {
 
     pub fn frame<'a>(&'a mut self, timeout: UINT) -> io::Result<Frame<'a>> {
         if self.output_texture {
-            let rotation = match self.display.rotation() {
-                DXGI_MODE_ROTATION_IDENTITY | DXGI_MODE_ROTATION_UNSPECIFIED => 0,
-                DXGI_MODE_ROTATION_ROTATE90 => 90,
-                DXGI_MODE_ROTATION_ROTATE180 => 180,
-                DXGI_MODE_ROTATION_ROTATE270 => 270,
-                _ => {
-                    // Unsupported rotation, try anyway
-                    0
-                }
-            };
-            Ok(Frame::Texture((self.get_texture(timeout)?, rotation)))
+            Ok(Frame::Texture(self.get_texture(timeout)?))
         } else {
             let width = self.width;
             let height = self.height;

@@ -61,8 +61,7 @@ class DesktopSettingPage extends StatefulWidget {
   final SettingsTabKey initialTabkey;
   static final List<SettingsTabKey> tabKeys = [
     SettingsTabKey.general,
-    if (!isWeb &&
-        !bind.isOutgoingOnly() &&
+    if (!bind.isOutgoingOnly() &&
         !bind.isDisableSettings() &&
         bind.mainGetBuildinOption(key: kOptionHideSecuritySetting) != 'Y')
       SettingsTabKey.safety,
@@ -217,7 +216,7 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
             width: _kTabWidth,
             child: Column(
               children: [
-                _header(context),
+                _header(),
                 Flexible(child: _listView(tabs: _settingTabs())),
               ],
             ),
@@ -240,40 +239,21 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
     );
   }
 
-  Widget _header(BuildContext context) {
-    final settingsText = Text(
-      translate('Settings'),
-      textAlign: TextAlign.left,
-      style: const TextStyle(
-        color: _accentColor,
-        fontSize: _kTitleFontSize,
-        fontWeight: FontWeight.w400,
-      ),
-    );
+  Widget _header() {
     return Row(
       children: [
-        if (isWeb)
-          IconButton(
-            onPressed: () {
-              if (Navigator.canPop(context)) {
-                Navigator.pop(context);
-              }
-            },
-            icon: Icon(Icons.arrow_back),
-          ).marginOnly(left: 5),
-        if (isWeb)
-          SizedBox(
-            height: 62,
-            child: Align(
-              alignment: Alignment.center,
-              child: settingsText,
+        SizedBox(
+          height: 62,
+          child: Text(
+            translate('Settings'),
+            textAlign: TextAlign.left,
+            style: const TextStyle(
+              color: _accentColor,
+              fontSize: _kTitleFontSize,
+              fontWeight: FontWeight.w400,
             ),
-          ).marginOnly(left: 20),
-        if (!isWeb)
-          SizedBox(
-            height: 62,
-            child: settingsText,
-          ).marginOnly(left: 20, top: 10),
+          ),
+        ).marginOnly(left: 20, top: 10),
         const Spacer(),
       ],
     );
@@ -342,8 +322,7 @@ class _General extends StatefulWidget {
 }
 
 class _GeneralState extends State<_General> {
-  final RxBool serviceStop =
-      isWeb ? RxBool(false) : Get.find<RxBool>(tag: 'stop-service');
+  final RxBool serviceStop = Get.find<RxBool>(tag: 'stop-service');
   RxBool serviceBtnEnabled = true.obs;
 
   @override
@@ -355,13 +334,13 @@ class _GeneralState extends State<_General> {
           physics: DraggableNeverScrollableScrollPhysics(),
           controller: scrollController,
           children: [
-            if (!isWeb) service(),
+            service(),
             theme(),
             _Card(title: 'Language', children: [language()]),
-            if (!isWeb) hwcodec(),
-            if (!isWeb) audio(context),
-            if (!isWeb) record(context),
-            if (!isWeb) WaylandCard(),
+            hwcodec(),
+            audio(context),
+            record(context),
+            WaylandCard(),
             other()
           ],
         ).marginOnly(bottom: _kListViewBottomMargin));
@@ -369,8 +348,8 @@ class _GeneralState extends State<_General> {
 
   Widget theme() {
     final current = MyTheme.getThemeModePreference().toShortString();
-    onChanged(String value) async {
-      await MyTheme.changeDarkMode(MyTheme.themeModeFromString(value));
+    onChanged(String value) {
+      MyTheme.changeDarkMode(MyTheme.themeModeFromString(value));
       setState(() {});
     }
 
@@ -415,13 +394,13 @@ class _GeneralState extends State<_General> {
 
   Widget other() {
     final children = <Widget>[
-      if (!isWeb && !bind.isIncomingOnly())
+      if (!bind.isIncomingOnly())
         _OptionCheckBox(context, 'Confirm before closing multiple tabs',
             kOptionEnableConfirmClosingTabs,
             isServer: false),
       _OptionCheckBox(context, 'Adaptive bitrate', kOptionEnableAbr),
-      if (!isWeb) wallpaper(),
-      if (!isWeb && !bind.isIncomingOnly()) ...[
+      wallpaper(),
+      if (!bind.isIncomingOnly()) ...[
         _OptionCheckBox(
           context,
           'Open connection in new tab',
@@ -438,19 +417,18 @@ class _GeneralState extends State<_General> {
               kOptionAllowAlwaysSoftwareRender,
             ),
           ),
-        if (!isWeb)
-          Tooltip(
-            message: translate('texture_render_tip'),
-            child: _OptionCheckBox(
-              context,
-              "Use texture rendering",
-              kOptionTextureRender,
-              optGetter: bind.mainGetUseTextureRender,
-              optSetter: (k, v) async =>
-                  await bind.mainSetLocalOption(key: k, value: v ? 'Y' : 'N'),
-            ),
+        Tooltip(
+          message: translate('texture_render_tip'),
+          child: _OptionCheckBox(
+            context,
+            "Use texture rendering",
+            kOptionTextureRender,
+            optGetter: bind.mainGetUseTextureRender,
+            optSetter: (k, v) async =>
+                await bind.mainSetLocalOption(key: k, value: v ? 'Y' : 'N'),
           ),
-        if (!isWeb && !bind.isCustomClient())
+        ),
+        if (!bind.isCustomClient())
           _OptionCheckBox(
             context,
             'Check for software update on startup',
@@ -465,7 +443,7 @@ class _GeneralState extends State<_General> {
           )
       ],
     ];
-    if (!isWeb && bind.mainShowOption(key: kOptionAllowLinuxHeadless)) {
+    if (bind.mainShowOption(key: kOptionAllowLinuxHeadless)) {
       children.add(_OptionCheckBox(
           context, 'Allow linux headless', kOptionAllowLinuxHeadless));
     }
@@ -575,18 +553,12 @@ class _GeneralState extends State<_General> {
       bool root_dir_exists = map['root_dir_exists']!;
       bool user_dir_exists = map['user_dir_exists']!;
       return _Card(title: 'Recording', children: [
-        if (!bind.isOutgoingOnly())
-          _OptionCheckBox(context, 'Automatically record incoming sessions',
-              kOptionAllowAutoRecordIncoming),
-        if (!bind.isIncomingOnly())
-          _OptionCheckBox(context, 'Automatically record outgoing sessions',
-              kOptionAllowAutoRecordOutgoing,
-              isServer: false),
-        if (showRootDir && !bind.isOutgoingOnly())
+        _OptionCheckBox(context, 'Automatically record incoming sessions',
+            kOptionAllowAutoRecordIncoming),
+        if (showRootDir)
           Row(
             children: [
-              Text(
-                  '${translate(bind.isIncomingOnly() ? "Directory" : "Incoming")}:'),
+              Text('${translate("Incoming")}:'),
               Expanded(
                 child: GestureDetector(
                     onTap: root_dir_exists
@@ -603,49 +575,45 @@ class _GeneralState extends State<_General> {
               ),
             ],
           ).marginOnly(left: _kContentHMargin),
-        if (!(showRootDir && bind.isIncomingOnly()))
-          Row(
-            children: [
-              Text(
-                  '${translate((showRootDir && !bind.isOutgoingOnly()) ? "Outgoing" : "Directory")}:'),
-              Expanded(
-                child: GestureDetector(
-                    onTap: user_dir_exists
-                        ? () => launchUrl(Uri.file(user_dir))
+        Row(
+          children: [
+            Text('${translate(showRootDir ? "Outgoing" : "Directory")}:'),
+            Expanded(
+              child: GestureDetector(
+                  onTap: user_dir_exists
+                      ? () => launchUrl(Uri.file(user_dir))
+                      : null,
+                  child: Text(
+                    user_dir,
+                    softWrap: true,
+                    style: user_dir_exists
+                        ? const TextStyle(decoration: TextDecoration.underline)
                         : null,
-                    child: Text(
-                      user_dir,
-                      softWrap: true,
-                      style: user_dir_exists
-                          ? const TextStyle(
-                              decoration: TextDecoration.underline)
-                          : null,
-                    )).marginOnly(left: 10),
-              ),
-              ElevatedButton(
-                      onPressed: isOptionFixed(kOptionVideoSaveDirectory)
-                          ? null
-                          : () async {
-                              String? initialDirectory;
-                              if (await Directory.fromUri(
-                                      Uri.directory(user_dir))
-                                  .exists()) {
-                                initialDirectory = user_dir;
-                              }
-                              String? selectedDirectory =
-                                  await FilePicker.platform.getDirectoryPath(
-                                      initialDirectory: initialDirectory);
-                              if (selectedDirectory != null) {
-                                await bind.mainSetLocalOption(
-                                    key: kOptionVideoSaveDirectory,
-                                    value: selectedDirectory);
-                                setState(() {});
-                              }
-                            },
-                      child: Text(translate('Change')))
-                  .marginOnly(left: 5),
-            ],
-          ).marginOnly(left: _kContentHMargin),
+                  )).marginOnly(left: 10),
+            ),
+            ElevatedButton(
+                    onPressed: isOptionFixed(kOptionVideoSaveDirectory)
+                        ? null
+                        : () async {
+                            String? initialDirectory;
+                            if (await Directory.fromUri(Uri.directory(user_dir))
+                                .exists()) {
+                              initialDirectory = user_dir;
+                            }
+                            String? selectedDirectory =
+                                await FilePicker.platform.getDirectoryPath(
+                                    initialDirectory: initialDirectory);
+                            if (selectedDirectory != null) {
+                              await bind.mainSetOption(
+                                  key: kOptionVideoSaveDirectory,
+                                  value: selectedDirectory);
+                              setState(() {});
+                            }
+                          },
+                    child: Text(translate('Change')))
+                .marginOnly(left: 5),
+          ],
+        ).marginOnly(left: _kContentHMargin),
       ]);
     });
   }
@@ -673,9 +641,8 @@ class _GeneralState extends State<_General> {
         initialKey: currentKey,
         onChanged: (key) async {
           await bind.mainSetLocalOption(key: kCommConfKeyLang, value: key);
-          if (isWeb) reloadCurrentWindow();
-          if (!isWeb) reloadAllWindows();
-          if (!isWeb) bind.mainChangeLanguage(lang: key);
+          reloadAllWindows();
+          bind.mainChangeLanguage(lang: key);
         },
         enabled: !isOptFixed,
       ).marginOnly(left: _kContentHMargin);
@@ -1370,7 +1337,7 @@ class _Network extends StatefulWidget {
 class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
-  bool locked = !isWeb && bind.mainIsInstalled();
+  bool locked = bind.mainIsInstalled();
 
   @override
   Widget build(BuildContext context) {
@@ -1379,9 +1346,8 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
     final scrollController = ScrollController();
     final hideServer =
         bind.mainGetBuildinOption(key: kOptionHideServerSetting) == 'Y';
-    // TODO: support web proxy
     final hideProxy =
-        isWeb || bind.mainGetBuildinOption(key: kOptionHideProxySetting) == 'Y';
+        bind.mainGetBuildinOption(key: kOptionHideProxySetting) == 'Y';
     return DesktopScrollWrapper(
         scrollController: scrollController,
         child: ListView(
@@ -1461,9 +1427,8 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
               children: [
                 Obx(() => _LabeledTextField(context, 'ID Server', idController,
                     idErrMsg.value, enabled, secure)),
-                if (!isWeb)
-                  Obx(() => _LabeledTextField(context, 'Relay Server',
-                      relayController, relayErrMsg.value, enabled, secure)),
+                Obx(() => _LabeledTextField(context, 'Relay Server',
+                    relayController, relayErrMsg.value, enabled, secure)),
                 Obx(() => _LabeledTextField(context, 'API Server',
                     apiController, apiErrMsg.value, enabled, secure)),
                 _LabeledTextField(
@@ -1502,7 +1467,7 @@ class _DisplayState extends State<_Display> {
               scrollStyle(context),
               imageQuality(context),
               codec(context),
-              if (!isWeb) privacyModeImpl(context),
+              privacyModeImpl(context),
               other(context),
             ]).marginOnly(bottom: _kListViewBottomMargin));
   }
@@ -1913,13 +1878,12 @@ class _AboutState extends State<_About> {
                   SelectionArea(
                       child: Text('${translate('Build Date')}: $buildDate')
                           .marginSymmetric(vertical: 4.0)),
-                  if (!isWeb)
-                    SelectionArea(
-                        child: Text('${translate('Fingerprint')}: $fingerprint')
-                            .marginSymmetric(vertical: 4.0)),
+                  SelectionArea(
+                      child: Text('${translate('Fingerprint')}: $fingerprint')
+                          .marginSymmetric(vertical: 4.0)),
                   InkWell(
                       onTap: () {
-                        launchUrlString('https://rustdesk.com/privacy.html');
+                        'RustDesk ${launchUrlString('https://rustdesk.com/privacy.html')}';
                       },
                       child: Text(
                         translate('Privacy Statement'),
@@ -1930,7 +1894,15 @@ class _AboutState extends State<_About> {
                         launchUrlString('https://rustdesk.com');
                       },
                       child: Text(
-                        translate('Website'),
+                        'RustDesk ${translate('Website')}',
+                        style: linkStyle,
+                      ).marginSymmetric(vertical: 4.0)),
+                  InkWell(
+                      onTap: () {
+                        launchUrlString('https://github.com/natfrp/rustdesk');
+                      },
+                      child: Text(
+                        '由 SakuraFrp 提供的构建',
                         style: linkStyle,
                       ).marginSymmetric(vertical: 4.0)),
                   Container(
@@ -2523,7 +2495,6 @@ void changeSocks5Proxy() async {
                                     : Icons.visibility))),
                         controller: pwdController,
                         enabled: !isOptFixed,
-                        maxLength: bind.mainMaxEncryptLen(),
                       )),
                 ),
               ],

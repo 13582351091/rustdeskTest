@@ -48,7 +48,6 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
           tabController: tabController,
           isRDP: isRDP,
           forceRelay: params['forceRelay'],
-          connToken: params['connToken'],
         )));
   }
 
@@ -83,7 +82,6 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
               isRDP: isRDP,
               tabController: tabController,
               forceRelay: args['forceRelay'],
-              connToken: args['connToken'],
             )));
       } else if (call.method == "onDestroy") {
         tabController.clear();

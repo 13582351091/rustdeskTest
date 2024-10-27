@@ -101,12 +101,7 @@ impl EncoderApi for VRamEncoder {
         frame: EncodeInput,
         ms: i64,
     ) -> ResultType<hbb_common::message_proto::VideoFrame> {
-        let (texture, rotation) = frame.texture()?;
-        if rotation != 0 {
-            // to-do: support rotation
-            // Both the encoder and display(w,h) information need to be changed.
-            bail!("rotation not supported");
-        }
+        let texture = frame.texture()?;
         let mut vf = VideoFrame::new();
         let mut frames = Vec::new();
         for frame in self

@@ -27,40 +27,39 @@ use super::screencast_portal::OrgFreedesktopPortalScreenCast as screencast_porta
 use lazy_static::lazy_static;
 
 lazy_static! {
-    pub static ref RDP_SESSION_INFO: Mutex<Option<RdpSessionInfo>> = Mutex::new(None);
+    pub static ref RDP_RESPONSE: Mutex<Option<RdpResponse>> = Mutex::new(None);
 }
 
 #[inline]
 pub fn close_session() {
-    let _ = RDP_SESSION_INFO.lock().unwrap().take();
+    let _ = RDP_RESPONSE.lock().unwrap().take();
 }
 
 #[inline]
 pub fn is_rdp_session_hold() -> bool {
-    RDP_SESSION_INFO.lock().unwrap().is_some()
+    RDP_RESPONSE.lock().unwrap().is_some()
 }
 
 pub fn try_close_session() {
-    let mut rdp_info = RDP_SESSION_INFO.lock().unwrap();
+    let mut rdp_res = RDP_RESPONSE.lock().unwrap();
     let mut close = false;
-    if let Some(rdp_info) = &*rdp_info {
+    if let Some(rdp_res) = &*rdp_res {
         // If is server running and restore token is supported, there's no need to keep the session.
-        if is_server_running() && rdp_info.is_support_restore_token {
+        if is_server_running() && rdp_res.is_support_restore_token {
             close = true;
         }
     }
     if close {
-        *rdp_info = None;
+        *rdp_res = None;
     }
 }
 
-pub struct RdpSessionInfo {
+pub struct RdpResponse {
     pub conn: Arc<SyncConnection>,
     pub streams: Vec<PwStreamInfo>,
     pub fd: OwnedFd,
     pub session: dbus::Path<'static>,
     pub is_support_restore_token: bool,
-    pub resolution: Arc<Mutex<Option<(usize, usize)>>>,
 }
 #[derive(Debug, Clone, Copy)]
 pub struct PwStreamInfo {
@@ -68,12 +67,6 @@ pub struct PwStreamInfo {
     source_type: u64,
     position: (i32, i32),
     size: (usize, usize),
-}
-
-impl PwStreamInfo {
-    pub fn get_size(&self) -> (usize, usize) {
-        self.size
-    }
 }
 
 #[derive(Debug)]
@@ -112,31 +105,24 @@ pub struct PipeWireCapturable {
 }
 
 impl PipeWireCapturable {
-    fn new(
-        conn: Arc<SyncConnection>,
-        fd: OwnedFd,
-        resolution: Arc<Mutex<Option<(usize, usize)>>>,
-        stream: PwStreamInfo,
-    ) -> Self {
+    fn new(conn: Arc<SyncConnection>, fd: OwnedFd, stream: PwStreamInfo) -> Self {
         // alternative to get screen resolution as stream.size is not always correct ex: on fractional scaling
         // https://github.com/rustdesk/rustdesk/issues/6116#issuecomment-1817724244
-        let size = get_res(Self {
+        let res = get_res(Self {
             dbus_conn: conn.clone(),
             fd: fd.clone(),
             path: stream.path,
             source_type: stream.source_type,
             position: stream.position,
             size: stream.size,
-        })
-        .unwrap_or(stream.size);
-        *resolution.lock().unwrap() = Some(size);
+        });
         Self {
             dbus_conn: conn,
             fd,
             path: stream.path,
             source_type: stream.source_type,
             position: stream.position,
-            size,
+            size: res.unwrap_or(stream.size),
         }
     }
 }
@@ -827,7 +813,7 @@ fn on_start_response(
 }
 
 pub fn get_capturables() -> Result<Vec<PipeWireCapturable>, Box<dyn Error>> {
-    let mut rdp_connection = match RDP_SESSION_INFO.lock() {
+    let mut rdp_connection = match RDP_RESPONSE.lock() {
         Ok(conn) => conn,
         Err(err) => return Err(Box::new(err)),
     };
@@ -836,36 +822,28 @@ pub fn get_capturables() -> Result<Vec<PipeWireCapturable>, Box<dyn Error>> {
         let (conn, fd, streams, session, is_support_restore_token) = request_remote_desktop()?;
         let conn = Arc::new(conn);
 
-        let rdp_info = RdpSessionInfo {
+        let rdp_res = RdpResponse {
             conn,
             streams,
             fd,
             session,
             is_support_restore_token,
-            resolution: Arc::new(Mutex::new(None)),
         };
-        *rdp_connection = Some(rdp_info);
+        *rdp_connection = Some(rdp_res);
     }
 
-    let rdp_info = match rdp_connection.as_ref() {
+    let rdp_res = match rdp_connection.as_ref() {
         Some(res) => res,
         None => {
             return Err(Box::new(DBusError("RDP response is None.".into())));
         }
     };
 
-    Ok(rdp_info
+    Ok(rdp_res
         .streams
         .clone()
         .into_iter()
-        .map(|s| {
-            PipeWireCapturable::new(
-                rdp_info.conn.clone(),
-                rdp_info.fd.clone(),
-                rdp_info.resolution.clone(),
-                s,
-            )
-        })
+        .map(|s| PipeWireCapturable::new(rdp_res.conn.clone(), rdp_res.fd.clone(), s))
         .collect())
 }
 

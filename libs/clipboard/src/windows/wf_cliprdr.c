@@ -220,8 +220,7 @@ struct wf_clipboard
 	HWND hwnd;
 	HANDLE hmem;
 	HANDLE thread;
-	HANDLE formatDataRespEvent;
-	BOOL formatDataRespReceived;
+	HANDLE response_data_event;
 
 	LPDATAOBJECT data_obj;
 	HANDLE data_obj_mutex;
@@ -229,7 +228,6 @@ struct wf_clipboard
 	ULONG req_fsize;
 	char *req_fdata;
 	HANDLE req_fevent;
-	BOOL req_f_received;
 
 	size_t nFiles;
 	size_t file_array_size;
@@ -289,9 +287,6 @@ static BOOL try_open_clipboard(HWND hwnd)
 static HRESULT STDMETHODCALLTYPE CliprdrStream_QueryInterface(IStream *This, REFIID riid,
 															  void **ppvObject)
 {
-	if (ppvObject == NULL)
-		return E_INVALIDARG;
-
 	if (IsEqualIID(riid, &IID_IStream) || IsEqualIID(riid, &IID_IUnknown))
 	{
 		IStream_AddRef(This);
@@ -367,13 +362,6 @@ static HRESULT STDMETHODCALLTYPE CliprdrStream_Read(IStream *This, void *pv, ULO
 	}
 
 	*pcbRead = clipboard->req_fsize;
-	// Check overflow, can not be a real case
-	if ((instance->m_lOffset.QuadPart + clipboard->req_fsize) < instance->m_lOffset.QuadPart) {
-		// It's better to crash to release the explorer.exe
-		// This is a critical error, because the explorer is waiting for the data
-		// and the m_lOffset is wrong(overflowed)
-		return S_FALSE;
-	}
 	instance->m_lOffset.QuadPart += clipboard->req_fsize;
 
 	if (clipboard->req_fsize < cb)
@@ -529,17 +517,11 @@ static HRESULT STDMETHODCALLTYPE CliprdrStream_Clone(IStream *This, IStream **pp
 
 static CliprdrStream *CliprdrStream_New(UINT32 connID, ULONG index, void *pData, const FILEDESCRIPTORW *dsc)
 {
-	IStream *iStream = NULL;
+	IStream *iStream;
 	BOOL success = FALSE;
 	BOOL isDir = FALSE;
-	CliprdrStream *instance = NULL;
+	CliprdrStream *instance;
 	wfClipboard *clipboard = (wfClipboard *)pData;
-
-	if (!(pData && dsc))
-	{
-		return NULL;
-	}
-
 	instance = (CliprdrStream *)calloc(1, sizeof(CliprdrStream));
 
 	if (instance)
@@ -892,18 +874,14 @@ static HRESULT STDMETHODCALLTYPE CliprdrDataObject_EnumDAdvise(IDataObject *This
 static CliprdrDataObject *CliprdrDataObject_New(UINT32 connID, FORMATETC *fmtetc, STGMEDIUM *stgmed, ULONG count,
 												void *data)
 {
-	CliprdrDataObject *instance = NULL;
-	IDataObject *iDataObject = NULL;
+	CliprdrDataObject *instance;
+	IDataObject *iDataObject;
 	instance = (CliprdrDataObject *)calloc(1, sizeof(CliprdrDataObject));
 
 	if (!instance)
 		goto error;
 
-	instance->m_pFormatEtc = NULL;
-	instance->m_pStgMedium = NULL;
-
 	iDataObject = &instance->iDataObject;
-	iDataObject->lpVtbl = NULL;
 	iDataObject->lpVtbl = (IDataObjectVtbl *)calloc(1, sizeof(IDataObjectVtbl));
 
 	if (!iDataObject->lpVtbl)
@@ -951,24 +929,7 @@ static CliprdrDataObject *CliprdrDataObject_New(UINT32 connID, FORMATETC *fmtetc
 
 	return instance;
 error:
-	if (iDataObject && iDataObject->lpVtbl)
-	{
-		free(iDataObject->lpVtbl);
-	}
-	if (instance)
-	{
-		if (instance->m_pFormatEtc)
-		{
-			free(instance->m_pFormatEtc);
-		}
-
-		if (instance->m_pStgMedium)
-		{
-			free(instance->m_pStgMedium);
-		}
-
-		CliprdrDataObject_Delete(instance);
-	}
+	CliprdrDataObject_Delete(instance);
 	return NULL;
 }
 
@@ -1049,8 +1010,6 @@ static HRESULT STDMETHODCALLTYPE CliprdrEnumFORMATETC_QueryInterface(IEnumFORMAT
 																	 REFIID riid, void **ppvObject)
 {
 	(void)This;
-	if (!ppvObject)
-		return E_INVALIDARG;
 
 	if (IsEqualIID(riid, &IID_IEnumFORMATETC) || IsEqualIID(riid, &IID_IUnknown))
 	{
@@ -1239,7 +1198,6 @@ static UINT32 get_local_format_id_by_name(wfClipboard *clipboard, const TCHAR *f
 	WCHAR *unicode_name;
 #if !defined(UNICODE)
 	size_t size;
-	int towchar_count;
 #endif
 
 	if (!clipboard || !format_name)
@@ -1247,8 +1205,6 @@ static UINT32 get_local_format_id_by_name(wfClipboard *clipboard, const TCHAR *f
 
 #if defined(UNICODE)
 	unicode_name = _wcsdup(format_name);
-	if (!unicode_name)
-		return 0;
 #else
 	size = _tcslen(format_name);
 	unicode_name = calloc(size + 1, sizeof(WCHAR));
@@ -1256,13 +1212,11 @@ static UINT32 get_local_format_id_by_name(wfClipboard *clipboard, const TCHAR *f
 	if (!unicode_name)
 		return 0;
 
-	towchar_count = MultiByteToWideChar(CP_OEMCP, 0, format_name, strlen(format_name), NULL, 0);
-	if (towchar_count <= 0 || towchar_count > size)
-		return 0;
-	towchar_count = MultiByteToWideChar(CP_OEMCP, 0, format_name, strlen(format_name), unicode_name, size);
-	if (towchar_count <= 0)
-		return 0;
+	MultiByteToWideChar(CP_OEMCP, 0, format_name, strlen(format_name), unicode_name, size);
 #endif
+
+	if (!unicode_name)
+		return 0;
 
 	for (i = 0; i < clipboard->map_size; i++)
 	{
@@ -1358,9 +1312,6 @@ static UINT cliprdr_send_tempdir(wfClipboard *clipboard)
 	if (!clipboard)
 		return -1;
 
-	// to-do:
-	// Directly use the environment variable `TEMP` is not safe.
-	// But this function is not used for now.
 	if (GetEnvironmentVariableA("TEMP", tempDirectory.szTempDir, sizeof(tempDirectory.szTempDir)) ==
 		0)
 		return -1;
@@ -1493,37 +1444,7 @@ static UINT cliprdr_send_format_list(wfClipboard *clipboard, UINT32 connID)
 	return rc;
 }
 
-// Ensure the event is not signaled, and reset it if it is.
-UINT try_reset_event(HANDLE event)
-{
-	if (!event)
-	{
-		return ERROR_INTERNAL_ERROR;
-	}
-
-	DWORD result = WaitForSingleObject(event, 0);
-	if (result == WAIT_OBJECT_0)
-	{
-		if (!ResetEvent(event))
-		{
-			return GetLastError();
-		}
-		else
-		{
-			return ERROR_SUCCESS;
-		}
-	}
-	else if (result == WAIT_TIMEOUT)
-	{
-		return ERROR_SUCCESS;
-	}
-	else
-	{
-		return ERROR_INTERNAL_ERROR;
-	}
-}
-
-UINT wait_response_event(UINT32 connID, wfClipboard *clipboard, HANDLE event, BOOL* recvedFlag, void **data)
+UINT wait_response_event(UINT32 connID, wfClipboard *clipboard, HANDLE event, void **data)
 {
 	UINT rc = ERROR_SUCCESS;
 	clipboard->context->IsStopped = FALSE;
@@ -1535,21 +1456,7 @@ UINT wait_response_event(UINT32 connID, wfClipboard *clipboard, HANDLE event, BO
 		DWORD waitRes = WaitForSingleObject(event, waitOnceTimeoutMillis);
 		if (waitRes == WAIT_TIMEOUT && clipboard->context->IsStopped == FALSE)
 		{
-			if ((*recvedFlag) == TRUE) {
-				// The data has been received, but the event is still not signaled.
-				// We just skip the rest of the waiting and reset the flag.
-				*recvedFlag = FALSE;
-				// Explicitly set the waitRes to WAIT_OBJECT_0, because we have received the data.
-				waitRes = WAIT_OBJECT_0;
-			} else {
-				// The data has not been received yet, we should continue to wait.
-				continue;
-			}
-		}
-
-		if (!ResetEvent(event))
-		{
-			// NOTE: critical error here, crash may be better
+			continue;
 		}
 
 		if (clipboard->context->IsStopped == TRUE)
@@ -1561,6 +1468,12 @@ UINT wait_response_event(UINT32 connID, wfClipboard *clipboard, HANDLE event, BO
 		if (waitRes != WAIT_OBJECT_0)
 		{
 			return ERROR_INTERNAL_ERROR;
+		}
+
+		if (!ResetEvent(event))
+		{
+			// NOTE: critical error here, crash may be better
+			rc = ERROR_INTERNAL_ERROR;
 		}
 
 		if ((*data) == NULL)
@@ -1606,13 +1519,6 @@ static UINT cliprdr_send_data_request(UINT32 connID, wfClipboard *clipboard, UIN
 	if (!clipboard || !clipboard->context || !clipboard->context->ClientFormatDataRequest)
 		return ERROR_INTERNAL_ERROR;
 
-	rc = try_reset_event(clipboard->formatDataRespEvent);
-	if (rc != ERROR_SUCCESS)
-	{
-		return rc;
-	}
-	clipboard->formatDataRespReceived = FALSE;
-
 	remoteFormatId = get_remote_format_id(clipboard, formatId);
 
 	formatDataRequest.connID = connID;
@@ -1624,7 +1530,7 @@ static UINT cliprdr_send_data_request(UINT32 connID, wfClipboard *clipboard, UIN
 		return rc;
 	}
 
-	return wait_response_event(connID, clipboard, clipboard->formatDataRespEvent, &clipboard->formatDataRespReceived, &clipboard->hmem);
+	wait_response_event(connID, clipboard, clipboard->response_data_event, &clipboard->hmem);
 }
 
 UINT cliprdr_send_request_filecontents(wfClipboard *clipboard, UINT32 connID, const void *streamid, ULONG index,
@@ -1637,17 +1543,7 @@ UINT cliprdr_send_request_filecontents(wfClipboard *clipboard, UINT32 connID, co
 	if (!clipboard || !clipboard->context || !clipboard->context->ClientFileContentsRequest)
 		return ERROR_INTERNAL_ERROR;
 
-	rc = try_reset_event(clipboard->req_fevent);
-	if (rc != ERROR_SUCCESS)
-	{
-		return rc;
-	}
-	clipboard->req_f_received = FALSE;
-
 	fileContentsRequest.connID = connID;
-	// streamId is `IStream*` pointer, though it is not very good on a 64-bit system.
-	// But it is OK, because it is only used to check if the stream is the same in
-	// `wf_cliprdr_server_file_contents_request()` function.
 	fileContentsRequest.streamId = (UINT32)(ULONG_PTR)streamid;
 	fileContentsRequest.listIndex = index;
 	fileContentsRequest.dwFlags = flag;
@@ -1662,7 +1558,7 @@ UINT cliprdr_send_request_filecontents(wfClipboard *clipboard, UINT32 connID, co
 		return rc;
 	}
 
-	return wait_response_event(connID, clipboard, clipboard->req_fevent, &clipboard->req_f_received, (void **)&clipboard->req_fdata);
+	return wait_response_event(connID, clipboard, clipboard->req_fevent, (void **)&clipboard->req_fdata);
 }
 
 static UINT cliprdr_send_response_filecontents(
@@ -1892,7 +1788,6 @@ static LRESULT CALLBACK cliprdr_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM 
 		break;
 
 	case WM_DESTROYCLIPBOARD:
-		// to-do: clear clipboard data?
 	case WM_ASKCBFORMATNAME:
 	case WM_HSCROLLCLIPBOARD:
 	case WM_PAINTCLIPBOARD:
@@ -2009,7 +1904,7 @@ static BOOL wf_cliprdr_get_file_contents(WCHAR *file_name, BYTE *buffer, LONG po
 										 LONG positionHigh, DWORD nRequested, DWORD *puSize)
 {
 	BOOL res = FALSE;
-	HANDLE hFile = NULL;
+	HANDLE hFile;
 	DWORD nGet, rc;
 
 	if (!file_name || !buffer || !puSize)
@@ -2037,11 +1932,9 @@ static BOOL wf_cliprdr_get_file_contents(WCHAR *file_name, BYTE *buffer, LONG po
 
 	res = TRUE;
 error:
-	if (hFile)
-	{
-		if (!CloseHandle(hFile))
-			res = FALSE;
-	}
+
+	if (!CloseHandle(hFile))
+		res = FALSE;
 
 	if (res)
 		*puSize = nGet;
@@ -2052,8 +1945,8 @@ error:
 /* path_name has a '\' at the end. e.g. c:\newfolder\, file_name is c:\newfolder\new.txt */
 static FILEDESCRIPTORW *wf_cliprdr_get_file_descriptor(WCHAR *file_name, size_t pathLen)
 {
-	HANDLE hFile = NULL;
-	FILEDESCRIPTORW *fd = NULL;
+	HANDLE hFile;
+	FILEDESCRIPTORW *fd;
 	fd = (FILEDESCRIPTORW *)calloc(1, sizeof(FILEDESCRIPTORW));
 
 	if (!fd)
@@ -2082,16 +1975,7 @@ static FILEDESCRIPTORW *wf_cliprdr_get_file_descriptor(WCHAR *file_name, size_t 
 	}
 
 	fd->nFileSizeLow = GetFileSize(hFile, &fd->nFileSizeHigh);
-	if ((wcslen(file_name + pathLen) + 1) > sizeof(fd->cFileName) / sizeof(fd->cFileName[0]))
-	{
-		// The file name is too long, which is not a normal case.
-		// So we just return NULL.
-		CloseHandle(hFile);
-		free(fd);
-		return NULL;
-	}
-
-	wcsncpy_s(fd->cFileName, sizeof(fd->cFileName) / sizeof(fd->cFileName[0]), file_name + pathLen, wcslen(file_name + pathLen) + 1);
+	wcscpy_s(fd->cFileName, sizeof(fd->cFileName) / 2, file_name + pathLen);
 	CloseHandle(hFile);
 
 	return fd;
@@ -2140,12 +2024,7 @@ static BOOL wf_cliprdr_add_to_file_arrays(wfClipboard *clipboard, WCHAR *full_fi
 	if (!clipboard->file_names[clipboard->nFiles])
 		return FALSE;
 
-	// `MAX_PATH` is long enough for the file name.
-	// So we just return FALSE if the file name is too long, which is not a normal case.
-	if ((wcslen(full_file_name) + 1) > MAX_PATH)
-		return FALSE;
-
-	wcsncpy_s(clipboard->file_names[clipboard->nFiles], MAX_PATH, full_file_name, wcslen(full_file_name) + 1);
+	wcscpy_s(clipboard->file_names[clipboard->nFiles], MAX_PATH, full_file_name);
 	/* add to descriptor array */
 	clipboard->fileDescriptor[clipboard->nFiles] =
 		wf_cliprdr_get_file_descriptor(full_file_name, pathLen);
@@ -2169,8 +2048,8 @@ static BOOL wf_cliprdr_traverse_directory(wfClipboard *clipboard, WCHAR *Dir, si
 	if (!clipboard || !Dir)
 		return FALSE;
 
-	if (wcslen(Dir) + 3 > MAX_PATH)
-		return FALSE;
+	// StringCchCopy(DirSpec, MAX_PATH, Dir);
+	// StringCchCat(DirSpec, MAX_PATH, TEXT("\\*"));
 	StringCchCopyW(DirSpec, MAX_PATH, Dir);
 	StringCchCatW(DirSpec, MAX_PATH, L"\\*");
 
@@ -2199,8 +2078,9 @@ static BOOL wf_cliprdr_traverse_directory(wfClipboard *clipboard, WCHAR *Dir, si
 		if ((FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
 		{
 			WCHAR DirAdd[MAX_PATH];
-			if (wcslen(Dir) + wcslen(FindFileData.cFileName) + 2 > MAX_PATH)
-				return FALSE;
+			// StringCchCopy(DirAdd, MAX_PATH, Dir);
+			// StringCchCat(DirAdd, MAX_PATH, _T("\\"));
+			// StringCchCat(DirAdd, MAX_PATH, FindFileData.cFileName);
 			StringCchCopyW(DirAdd, MAX_PATH, Dir);
 			StringCchCatW(DirAdd, MAX_PATH, L"\\");
 			StringCchCatW(DirAdd, MAX_PATH, FindFileData.cFileName);
@@ -2214,8 +2094,10 @@ static BOOL wf_cliprdr_traverse_directory(wfClipboard *clipboard, WCHAR *Dir, si
 		else
 		{
 			WCHAR fileName[MAX_PATH];
-			if (wcslen(Dir) + wcslen(FindFileData.cFileName) + 2 > MAX_PATH)
-				return FALSE;
+			// StringCchCopy(fileName, MAX_PATH, Dir);
+			// StringCchCat(fileName, MAX_PATH, _T("\\"));
+			// StringCchCat(fileName, MAX_PATH, FindFileData.cFileName);
+
 			StringCchCopyW(fileName, MAX_PATH, Dir);
 			StringCchCatW(fileName, MAX_PATH, L"\\");
 			StringCchCatW(fileName, MAX_PATH, FindFileData.cFileName);
@@ -2360,11 +2242,9 @@ static UINT wf_cliprdr_server_format_list(CliprdrClientContext *context,
 		if (context->EnableFiles)
 		{
 			UINT32 *p_conn_id = (UINT32 *)calloc(1, sizeof(UINT32));
-			if (p_conn_id) {
-				*p_conn_id = formatList->connID;
-				if (PostMessage(clipboard->hwnd, WM_CLIPRDR_MESSAGE, OLE_SETCLIPBOARD, p_conn_id))
-					rc = CHANNEL_RC_OK;
-			}
+			*p_conn_id = formatList->connID;
+			if (PostMessage(clipboard->hwnd, WM_CLIPRDR_MESSAGE, OLE_SETCLIPBOARD, p_conn_id))
+				rc = CHANNEL_RC_OK;
 		}
 		else
 		{
@@ -2385,30 +2265,16 @@ static UINT wf_cliprdr_server_format_list(CliprdrClientContext *context,
 				//    SetClipboardData(clipboard->format_mappings[i].local_format_id, NULL);
 
 				FORMAT_IDS *format_ids = (FORMAT_IDS *)calloc(1, sizeof(FORMAT_IDS));
-				if (format_ids)
+				format_ids->connID = formatList->connID;
+				format_ids->size = (UINT32)clipboard->map_size;
+				format_ids->formats = (UINT32 *)calloc(format_ids->size, sizeof(UINT32));
+				for (i = 0; i < format_ids->size; ++i)
 				{
-					format_ids->connID = formatList->connID;
-					format_ids->size = (UINT32)clipboard->map_size;
-					format_ids->formats = (UINT32 *)calloc(format_ids->size, sizeof(UINT32));
-					if (format_ids->formats)
-					{
-						for (i = 0; i < format_ids->size; ++i)
-						{
-							format_ids->formats[i] = clipboard->format_mappings[i].local_format_id;
-						}
-						if (PostMessage(clipboard->hwnd, WM_CLIPRDR_MESSAGE, DELAYED_RENDERING, format_ids))
-						{
-							rc = CHANNEL_RC_OK;
-						}
-						else
-						{
-							rc = ERROR_INTERNAL_ERROR;
-						}
-					}
-					else
-					{
-						rc = ERROR_INTERNAL_ERROR;
-					}
+					format_ids->formats[i] = clipboard->format_mappings[i].local_format_id;
+				}
+				if (PostMessage(clipboard->hwnd, WM_CLIPRDR_MESSAGE, DELAYED_RENDERING, format_ids))
+				{
+					rc = CHANNEL_RC_OK;
 				}
 				else
 				{
@@ -2603,28 +2469,17 @@ wf_cliprdr_server_format_data_request(CliprdrClientContext *context,
 				 p += len + 1, clipboard->nFiles++)
 			{
 				int cchWideChar;
+				WCHAR *wFileName;
 				cchWideChar = MultiByteToWideChar(CP_ACP, MB_COMPOSITE, p, len, NULL, 0);
 				wFileName = (LPWSTR)calloc(cchWideChar, sizeof(WCHAR));
-				if (wFileName)
-				{
-					MultiByteToWideChar(CP_ACP, MB_COMPOSITE, p, len, wFileName, cchWideChar);
-					wf_cliprdr_process_filename(clipboard, wFileName, cchWideChar);
-					free(wFileName);
-				}
-				else
-				{
-					rc = ERROR_INTERNAL_ERROR;
-					GlobalUnlock(stg_medium.hGlobal);
-					ReleaseStgMedium(&stg_medium);
-					goto exit;
-				}
+				MultiByteToWideChar(CP_ACP, MB_COMPOSITE, p, len, wFileName, cchWideChar);
+				wf_cliprdr_process_filename(clipboard, wFileName, cchWideChar);
 			}
 		}
 
 		GlobalUnlock(stg_medium.hGlobal);
 		ReleaseStgMedium(&stg_medium);
 	resp:
-		// size will not overflow, because size type is size_t (unsigned __int64)
 		size = 4 + clipboard->nFiles * sizeof(FILEDESCRIPTORW);
 		groupDsc = (FILEGROUPDESCRIPTORW *)malloc(size);
 
@@ -2664,17 +2519,10 @@ wf_cliprdr_server_format_data_request(CliprdrClientContext *context,
 				globlemem = (char *)GlobalLock(hClipdata);
 				size = (int)GlobalSize(hClipdata);
 				buff = malloc(size);
-				if (buff)
-				{
-					CopyMemory(buff, globlemem, size);
-					rc = ERROR_SUCCESS;
-				}
-				else
-				{
-					rc = ERROR_INTERNAL_ERROR;
-				}
+				CopyMemory(buff, globlemem, size);
 				GlobalUnlock(hClipdata);
 				CloseClipboard();
+				rc = ERROR_SUCCESS;
 			}
 		}
 		else
@@ -2697,7 +2545,7 @@ exit:
 	response.requestedFormatData = (BYTE *)buff;
 	if (ERROR_SUCCESS != clipboard->context->ClientFormatDataResponse(clipboard->context, &response))
 	{
-		// CAUTION: if failed to send, server will wait a long time, default 30 seconds.
+		// CAUTION: if failed to send, server will wait a long time
 	}
 
 	if (buff)
@@ -2773,11 +2621,9 @@ wf_cliprdr_server_format_data_response(CliprdrClientContext *context,
 		rc = CHANNEL_RC_OK;
 	} while (0);
 
-	if (!SetEvent(clipboard->formatDataRespEvent))
+	if (!SetEvent(clipboard->response_data_event))
 	{
-		// If failed to set event, set flag to indicate the event is received.
-		DEBUG_CLIPRDR("wf_cliprdr_server_format_data_response(), SetEvent failed with 0x%x", GetLastError());
-		clipboard->formatDataRespReceived = TRUE;
+		// CAUTION: critical error here, process will hang up until wait timeout default 3min.
 		rc = ERROR_INTERNAL_ERROR;
 	}
 	return rc;
@@ -3053,9 +2899,7 @@ wf_cliprdr_server_file_contents_response(CliprdrClientContext *context,
 
 	if (!SetEvent(clipboard->req_fevent))
 	{
-		// If failed to set event, set flag to indicate the event is received.
-		DEBUG_CLIPRDR("wf_cliprdr_server_file_contents_response(), SetEvent failed with 0x%x", GetLastError());
-		clipboard->req_f_received = TRUE;
+		// CAUTION: critical error here, process will hang up until wait timeout default 3min.
 	}
 	return rc;
 }
@@ -3090,16 +2934,14 @@ BOOL wf_cliprdr_init(wfClipboard *clipboard, CliprdrClientContext *cliprdr)
 			  (formatMapping *)calloc(clipboard->map_capacity, sizeof(formatMapping))))
 		goto error;
 
-	if (!(clipboard->formatDataRespEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+	if (!(clipboard->response_data_event = CreateEvent(NULL, TRUE, FALSE, NULL)))
 		goto error;
-	clipboard->formatDataRespReceived = FALSE;
 
 	if (!(clipboard->data_obj_mutex = CreateMutex(NULL, FALSE, "data_obj_mutex")))
 		goto error;
 
 	if (!(clipboard->req_fevent = CreateEvent(NULL, TRUE, FALSE, NULL)))
 		goto error;
-	clipboard->req_f_received = FALSE;
 
 	if (!(clipboard->thread = CreateThread(NULL, 0, cliprdr_thread_func, clipboard, 0, NULL)))
 		goto error;
@@ -3160,8 +3002,8 @@ BOOL wf_cliprdr_uninit(wfClipboard *clipboard, CliprdrClientContext *cliprdr)
 		clipboard->data_obj = NULL;
 	}
 
-	if (clipboard->formatDataRespEvent)
-		CloseHandle(clipboard->formatDataRespEvent);
+	if (clipboard->response_data_event)
+		CloseHandle(clipboard->response_data_event);
 
 	if (clipboard->data_obj_mutex)
 		CloseHandle(clipboard->data_obj_mutex);

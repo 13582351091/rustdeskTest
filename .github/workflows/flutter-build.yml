@@ -33,8 +33,8 @@ env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   # vcpkg version: 2024.07.12
   VCPKG_COMMIT_ID: "1de2026f28ead93ff1773e6e680387643e914ea1"
-  VERSION: "1.3.2"
-  NDK_VERSION: "r27b"
+  VERSION: "1.3.0"
+  NDK_VERSION: "r27"
   #signing keys env variable checks
   ANDROID_SIGNING_KEY: "${{ secrets.ANDROID_SIGNING_KEY }}"
   MACOS_P12_BASE64: "${{ secrets.MACOS_P12_BASE64 }}"
@@ -497,6 +497,17 @@ jobs:
             exit 1
           fi
         shell: bash
+      
+      - name: compress vcpkg all package to zip file
+        run: |
+          zip -r vcpkg.zip ${{ env.VCPKG_ROOT }}/*
+          
+      - name: upload vcpkg installed to artifact
+        uses: actions/upload-artifact@master
+        with:
+          name: vcpkg-artifact
+          path: vcpkg.zip
+      
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
@@ -884,7 +895,7 @@ jobs:
                git \
                g++ \
                g++-multilib \
-               libayatana-appindicator3-dev \
+               libappindicator3-dev \
                libasound2-dev \
                libc6-dev \
                libclang-10-dev \
@@ -976,11 +987,8 @@ jobs:
       - name: fix android for flutter 3.13
         if: $${{ env.ANDROID_FLUTTER_VERSION == '3.13.9' }}
         run: |
-          cd flutter
-          sed -i 's/uni_links_desktop/#uni_links_desktop/g' pubspec.yaml
-          sed -i 's/extended_text: .*/extended_text: 11.1.0/' pubspec.yaml
-          flutter pub get
-          cd lib
+          sed -i 's/uni_links_desktop/#uni_links_desktop/g' flutter/pubspec.yaml
+          cd flutter/lib
           find . | grep dart | xargs sed -i 's/textScaler: TextScaler.linear(\(.*\)),/textScaleFactor: \1,/g'
 
       - name: Build rustdesk lib
@@ -1098,6 +1106,12 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           files: |
             ${{steps.sign-rustdesk.outputs.signedReleaseFile}}
+            
+      - name: Upload Rustdesk unsigned aarch64 apk to Artifacts
+        uses: actions/upload-artifact@master
+        with:
+          name: rustdesk.aarch64.apk
+          path: /home/runner/work/rustdesk/rustdesk/flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
       - name: Publish unsigned apk package
         if: env.ANDROID_SIGNING_KEY == null && env.UPLOAD_ARTIFACT == 'true'
@@ -1147,7 +1161,7 @@ jobs:
                git \
                g++ \
                g++-multilib \
-               libayatana-appindicator3-dev \
+               libappindicator3-dev \
                libasound2-dev \
                libc6-dev \
                libclang-10-dev \
@@ -1213,11 +1227,8 @@ jobs:
       - name: fix android for flutter 3.13
         if: $${{ env.ANDROID_FLUTTER_VERSION == '3.13.9' }}
         run: |
-          cd flutter
-          sed -i 's/uni_links_desktop/#uni_links_desktop/g' pubspec.yaml
-          sed -i 's/extended_text: .*/extended_text: 11.1.0/' pubspec.yaml
-          flutter pub get
-          cd lib
+          sed -i 's/uni_links_desktop/#uni_links_desktop/g' flutter/pubspec.yaml
+          cd flutter/lib
           find . | grep dart | xargs sed -i 's/textScaler: TextScaler.linear(\(.*\)),/textScaleFactor: \1,/g'
 
       - name: Build rustdesk
@@ -1424,7 +1435,7 @@ jobs:
                gcc \
                git \
                g++ \
-               libayatana-appindicator3-dev \
+               libappindicator3-dev \
                libasound2-dev \
                libclang-10-dev \
                libgstreamer1.0-dev \
@@ -1681,7 +1692,7 @@ jobs:
                gcc \
                git \
                g++ \
-               libayatana-appindicator3-dev \
+               libappindicator3-dev \
                libasound2-dev \
                libclang-dev \
                libdbus-1-dev \
@@ -1968,7 +1979,7 @@ jobs:
             flatpak/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.flatpak
 
   build-rustdesk-web:
-    if: False
+    if: true
     name: build-rustdesk-web
     runs-on: ubuntu-20.04
     strategy:

@@ -12,6 +12,8 @@ fn main() {
     }
     common::test_rendezvous_server();
     common::test_nat_type();
+    #[cfg(target_os = "android")]
+    crate::common::check_software_update();
     common::global_clean();
 }
 
@@ -100,7 +102,7 @@ fn main() {
         cli::connect_test(p, key, token);
     } else if let Some(p) = matches.value_of("server") {
         log::info!("id={}", hbb_common::config::Config::get_id());
-        crate::start_server(true, false);
+        crate::start_server(true);
     }
     common::global_clean();
 }

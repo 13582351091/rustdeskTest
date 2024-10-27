@@ -89,11 +89,11 @@ pub fn encrypt_str_or_original(s: &str, version: &str, max_len: usize) -> String
         log::error!("Duplicate encryption!");
         return s.to_owned();
     }
-    if s.chars().count() > max_len {
+    if s.bytes().len() > max_len {
         return String::default();
     }
     if version == "00" {
-        if let Ok(s) = encrypt(s.as_bytes()) {
+        if let Ok(s) = encrypt(s.as_bytes(), max_len) {
             return version.to_owned() + &s;
         }
     }
@@ -130,7 +130,7 @@ pub fn encrypt_vec_or_original(v: &[u8], version: &str, max_len: usize) -> Vec<u
         return vec![];
     }
     if version == "00" {
-        if let Ok(s) = encrypt(v) {
+        if let Ok(s) = encrypt(v, max_len) {
             let mut version = version.to_owned().into_bytes();
             version.append(&mut s.into_bytes());
             return version;
@@ -155,8 +155,8 @@ pub fn decrypt_vec_or_original(v: &[u8], current_version: &str) -> (Vec<u8>, boo
     (v.to_owned(), false, !v.is_empty())
 }
 
-fn encrypt(v: &[u8]) -> Result<String, ()> {
-    if !v.is_empty() {
+fn encrypt(v: &[u8], max_len: usize) -> Result<String, ()> {
+    if !v.is_empty() && v.len() <= max_len {
         symmetric_crypt(v, true).map(|v| base64::encode(v, base64::Variant::Original))
     } else {
         Err(())

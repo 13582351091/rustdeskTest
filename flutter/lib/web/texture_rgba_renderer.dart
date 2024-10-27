@@ -6,7 +6,7 @@ class TextureRgbaRenderer {
   }
 
   Future<bool> closeTexture(int key) {
-    return Future(() => true);
+    throw UnimplementedError();
   }
 
   Future<bool> onRgba(

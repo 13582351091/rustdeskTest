@@ -486,9 +486,6 @@ fn run(vs: VideoService) -> ResultType<()> {
     let mut repeat_encode_counter = 0;
     let repeat_encode_max = 10;
     let mut encode_fail_counter = 0;
-    let mut first_frame = true;
-    let capture_width = c.width;
-    let capture_height = c.height;
 
     while sp.ok() {
         #[cfg(windows)]
@@ -577,9 +574,6 @@ fn run(vs: VideoService) -> ResultType<()> {
                         &mut encoder,
                         recorder.clone(),
                         &mut encode_fail_counter,
-                        &mut first_frame,
-                        capture_width,
-                        capture_height,
                     )?;
                     frame_controller.set_send(now, send_conn_ids);
                 }
@@ -635,9 +629,6 @@ fn run(vs: VideoService) -> ResultType<()> {
                             &mut encoder,
                             recorder.clone(),
                             &mut encode_fail_counter,
-                            &mut first_frame,
-                            capture_width,
-                            capture_height,
                         )?;
                         frame_controller.set_send(now, send_conn_ids);
                     }
@@ -728,13 +719,7 @@ fn setup_encoder(
     );
     Encoder::set_fallback(&encoder_cfg);
     let codec_format = Encoder::negotiated_codec();
-    let recorder = get_recorder(
-        c.width,
-        c.height,
-        &codec_format,
-        record_incoming,
-        display_idx,
-    );
+    let recorder = get_recorder(c.width, c.height, &codec_format, record_incoming);
     let use_i444 = Encoder::use_i444(&encoder_cfg);
     let encoder = Encoder::new(encoder_cfg.clone(), use_i444)?;
     Ok((encoder, encoder_cfg, codec_format, use_i444, recorder))
@@ -821,7 +806,6 @@ fn get_recorder(
     height: usize,
     codec_format: &CodecFormat,
     record_incoming: bool,
-    display: usize,
 ) -> Arc<Mutex<Option<Recorder>>> {
     #[cfg(windows)]
     let root = crate::platform::is_root();
@@ -841,7 +825,10 @@ fn get_recorder(
             server: true,
             id: Config::get_id(),
             dir: crate::ui_interface::video_save_directory(root),
-            display,
+            filename: "".to_owned(),
+            width,
+            height,
+            format: codec_format.clone(),
             tx,
         })
         .map_or(Default::default(), |r| Arc::new(Mutex::new(Some(r))))
@@ -919,9 +906,6 @@ fn handle_one_frame(
     encoder: &mut Encoder,
     recorder: Arc<Mutex<Option<Recorder>>>,
     encode_fail_counter: &mut usize,
-    first_frame: &mut bool,
-    width: usize,
-    height: usize,
 ) -> ResultType<HashSet<i32>> {
     sp.snapshot(|sps| {
         // so that new sub and old sub share the same encoder after switch
@@ -933,8 +917,6 @@ fn handle_one_frame(
     })?;
 
     let mut send_conn_ids: HashSet<i32> = Default::default();
-    let first = *first_frame;
-    *first_frame = false;
     match encoder.encode_to_message(frame, ms) {
         Ok(mut vf) => {
             *encode_fail_counter = 0;
@@ -945,27 +927,21 @@ fn handle_one_frame(
                 .lock()
                 .unwrap()
                 .as_mut()
-                .map(|r| r.write_message(&msg, width, height));
+                .map(|r| r.write_message(&msg));
             send_conn_ids = sp.send_video_frame(msg);
         }
         Err(e) => {
-            *encode_fail_counter += 1;
-            // Encoding errors are not frequent except on Android
-            if !cfg!(target_os = "android") {
-                log::error!("encode fail: {e:?}, times: {}", *encode_fail_counter,);
-            }
             let max_fail_times = if cfg!(target_os = "android") && encoder.is_hardware() {
-                9
+                12
             } else {
-                3
+                6
             };
-            let repeat = !encoder.latency_free();
-            // repeat encoders can reach max_fail_times on the first frame
-            if (first && !repeat) || *encode_fail_counter >= max_fail_times {
+            *encode_fail_counter += 1;
+            if *encode_fail_counter >= max_fail_times {
                 *encode_fail_counter = 0;
                 if encoder.is_hardware() {
                     encoder.disable();
-                    log::error!("switch due to encoding fails, first frame: {first}, error: {e:?}");
+                    log::error!("switch due to encoding fails more than {max_fail_times} times");
                     bail!("SWITCH");
                 }
             }

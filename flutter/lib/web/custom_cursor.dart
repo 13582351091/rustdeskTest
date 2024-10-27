@@ -58,11 +58,6 @@ class CursorManager {
       ]);
     }
   }
-
-  Future<void> resetSystemCursor() async {
-    latestKey = '';
-    js.context.callMethod('setByName', ['cursor', 'auto']);
-  }
 }
 
 class FlutterCustomMemoryImageCursor extends MouseCursor {
@@ -97,7 +92,6 @@ class _FlutterCustomMemoryImageCursorSession extends MouseCursorSession {
 }
 
 deleteCustomCursor(String key) => CursorManager.instance.deleteCursor(key);
-resetSystemCursor() => CursorManager.instance.resetSystemCursor();
 
 MouseCursor buildCursorOfCache(
     model.CursorModel cursor, double scale, model.CursorData? cache) {

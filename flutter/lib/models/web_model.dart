@@ -1,14 +1,12 @@
 // ignore_for_file: avoid_web_libraries_in_flutter
 
 import 'dart:convert';
-import 'dart:js_interop';
 import 'dart:typed_data';
 import 'dart:js';
 import 'dart:html';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_hbb/models/state_model.dart';
 
 import 'package:flutter_hbb/web/bridge.dart';
 import 'package:flutter_hbb/common.dart';
@@ -30,15 +28,7 @@ class PlatformFFI {
     context.callMethod('setByName', [name, value]);
   }
 
-  PlatformFFI._() {
-    window.document.addEventListener(
-        'visibilitychange',
-        (event) => {
-              stateGlobal.isWebVisible =
-                  window.document.visibilityState == 'visible'
-            });
-  }
-
+  PlatformFFI._();
   static final PlatformFFI instance = PlatformFFI._();
 
   static get localeName => window.navigator.language;
@@ -108,10 +98,6 @@ class PlatformFFI {
           sessionId: sessionId, display: display, ptr: ptr);
 
   Future<void> init(String appType) async {
-    Completer completer = Completer();
-    context["onInitFinished"] = () {
-      completer.complete();
-    };
     context.callMethod('init');
     version = getByName('version');
     window.onContextMenu.listen((event) {
@@ -126,7 +112,6 @@ class PlatformFFI {
         print('json.decode fail(): $e');
       }
     };
-    return completer.future;
   }
 
   void setEventCallback(void Function(Map<String, dynamic>) fun) {
@@ -172,10 +157,4 @@ class PlatformFFI {
 
   // just for compilation
   void syncAndroidServiceAppDirConfigPath() {}
-
-  void setFullscreenCallback(void Function(bool) fun) {
-    context["onFullscreenChanged"] = (bool v) {
-      fun(v);
-    };
-  }
 }
